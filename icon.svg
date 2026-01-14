@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#1a0f0d"/>
+  <circle cx="256" cy="256" r="200" fill="#d4af37"/>
+  <path d="M140 140 L372 140 L372 200 C372 280 300 340 256 370 C212 340 140 280 140 200 Z" fill="#1a0f0d"/>
+  <path d="M140 140 L110 140 C90 140 80 160 80 180 C80 230 110 250 140 260" fill="none" stroke="#1a0f0d" stroke-width="20"/>
+  <path d="M372 140 L402 140 C422 140 432 160 432 180 C432 230 402 250 372 260" fill="none" stroke="#1a0f0d" stroke-width="20"/>
+  <text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-weight="bold" font-size="100" fill="#d4af37">Bank</text>
+</svg>
