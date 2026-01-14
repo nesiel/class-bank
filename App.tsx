@@ -5,9 +5,10 @@ import { Podium } from './components/Podium';
 import { StudentDetails } from './components/StudentDetails';
 import { SeatingChart } from './components/SeatingChart';
 import { StoreView } from './components/StoreView';
+import { BatchCommenter } from './components/BatchCommenter';
 import { GoogleGenAI } from "@google/genai";
 import { 
-  Home, ShieldCheck, ChevronUp, ChevronDown, Settings, Trash2, Trophy, FileSpreadsheet, Coins, Users, Phone, Download, UserPlus, LayoutGrid, Book, X, PlusCircle, ArrowUp, ArrowDown, GripVertical, MessageCircle, Undo, Scroll, Star, AlertCircle, Palette, Store, Image as ImageIcon, ShoppingBag, Plus, Package, Wand2, Loader2, Save
+  Home, ShieldCheck, ChevronUp, ChevronDown, Settings, Trash2, Trophy, FileSpreadsheet, Coins, Users, Phone, Download, UserPlus, LayoutGrid, Book, X, PlusCircle, ArrowUp, ArrowDown, GripVertical, MessageCircle, Undo, Scroll, Star, AlertCircle, Palette, Store, Image as ImageIcon, ShoppingBag, Plus, Package, Wand2, Loader2, Save, GraduationCap
 } from 'lucide-react';
 
 // Define the available admin sections
@@ -32,6 +33,7 @@ function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showRules, setShowRules] = useState(false);
+  const [showBatchCommenter, setShowBatchCommenter] = useState(false);
   
   // Admin Collapsibles State
   const [adminCollapsed, setAdminCollapsed] = useState<Record<string, boolean>>({
@@ -197,7 +199,6 @@ function App() {
   const handleStoreItemImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, itemId: string) => {
     if (e.target.files?.[0]) {
       try {
-        // fileToBase64 now automatically compresses images
         const base64 = await fileToBase64(e.target.files[0]);
         handleUpdateStoreItem(itemId, 'image', base64);
       } catch (err) {
@@ -234,8 +235,6 @@ function App() {
              for (const part of parts) {
                 if (part.inlineData) {
                     const base64 = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-                    // We can accept the AI image as is, or compress it if we want to be safe, 
-                    // but usually AI icons are manageable. Manual upload is the big risk.
                     handleUpdateStoreItem(item.id, 'image', base64);
                     break;
                 }
@@ -385,6 +384,55 @@ function App() {
     }
   };
 
+  // --- Derived State Calculations (Moved Up) ---
+  const sorted = (Object.values(db) as Student[]).sort((a, b) => b.total - a.total);
+  const filtered = sorted.filter(s => s.name.includes(searchQuery));
+  const classTotal = (Object.values(db) as Student[]).reduce((sum, s) => sum + s.total, 0);
+
+  // Calculate all purchases for history view
+  const allPurchases = (Object.values(db) as Student[]).flatMap(s => 
+    (s.purchases || []).map(p => ({...p, studentName: s.name}))
+  ).sort((a, b) => b.timestamp - a.timestamp);
+
+  // Logic for Tefillah Stats (Sorted by Absence Priority, then Score)
+  const tefillahStats = (Object.values(db) as Student[])
+    .map(s => {
+        const prayerLogs = s.logs.filter(l => l.sub && l.sub.includes('תפיל'));
+        const rawScore = prayerLogs.reduce((sum, l) => sum + l.s, 0);
+        const absences = prayerLogs.filter(l => l.k.includes('חיסור')).reduce((sum, l) => sum + l.c, 0);
+        const goodWords = prayerLogs.filter(l => l.k.includes('מילה טובה')).reduce((sum, l) => sum + l.c, 0);
+        const calculatedScore = rawScore + (goodWords * 10) - (absences * 20);
+
+        return { 
+            ...s, 
+            tefillahScore: calculatedScore, 
+            tefillahAbsences: absences,
+            goodWordsTefillah: goodWords, 
+            hasPrayerLogs: prayerLogs.length > 0 
+        };
+    })
+    .filter(s => s.hasPrayerLogs)
+    .sort((a, b) => {
+        if (a.tefillahAbsences !== b.tefillahAbsences) {
+            return a.tefillahAbsences - b.tefillahAbsences;
+        }
+        return b.tefillahScore - a.tefillahScore;
+    });
+
+  let tefillahChampions = tefillahStats.filter(s => !s.isHiddenFromPodium);
+  if (tefillahChampions.length > 0) {
+      const firstPlace = tefillahChampions[0];
+      const allFirstPlaces = tefillahChampions.filter(s => 
+          s.tefillahAbsences === firstPlace.tefillahAbsences && 
+          s.tefillahScore === firstPlace.tefillahScore
+      );
+      if (allFirstPlaces.length > 3) {
+          tefillahChampions = allFirstPlaces;
+      } else {
+          tefillahChampions = tefillahChampions.slice(0, 3);
+      }
+  }
+
   // --- Admin Section Renders ---
 
   const renderAdminSectionContent = (id: string) => {
@@ -402,6 +450,10 @@ function App() {
                         <span className="text-xs font-bold text-blue-500">אלפון כיתתי</span>
                         <input type="file" className="hidden" accept=".xlsx, .xls" onChange={(e) => handleFileUpload(e, 'alfon')} />
                     </label>
+                    <button onClick={() => setShowBatchCommenter(true)} className="col-span-2 flex items-center justify-center gap-2 p-4 bg-[#d4af37]/10 border border-[#d4af37]/20 rounded-xl active:scale-95 transition">
+                        <GraduationCap className="text-[#d4af37] mb-0" size={24} />
+                        <span className="text-xs font-bold text-[#d4af37]">מחולל הערות לתעודה (AI)</span>
+                    </button>
                 </div>
             );
         case 'store_manage':
@@ -570,54 +622,6 @@ function App() {
         default: return null;
     }
   };
-
-  const sorted = (Object.values(db) as Student[]).sort((a, b) => b.total - a.total);
-  const filtered = sorted.filter(s => s.name.includes(searchQuery));
-  const classTotal = (Object.values(db) as Student[]).reduce((sum, s) => sum + s.total, 0);
-
-  // Logic for Tefillah Stats (Sorted by Absence Priority, then Score)
-  const tefillahStats = (Object.values(db) as Student[])
-    .map(s => {
-        const prayerLogs = s.logs.filter(l => l.sub && l.sub.includes('תפיל'));
-        const rawScore = prayerLogs.reduce((sum, l) => sum + l.s, 0);
-        const absences = prayerLogs.filter(l => l.k.includes('חיסור')).reduce((sum, l) => sum + l.c, 0);
-        const goodWords = prayerLogs.filter(l => l.k.includes('מילה טובה')).reduce((sum, l) => sum + l.c, 0);
-        const calculatedScore = rawScore + (goodWords * 10) - (absences * 20);
-
-        return { 
-            ...s, 
-            tefillahScore: calculatedScore, 
-            tefillahAbsences: absences,
-            goodWordsTefillah: goodWords, 
-            hasPrayerLogs: prayerLogs.length > 0 
-        };
-    })
-    .filter(s => s.hasPrayerLogs)
-    .sort((a, b) => {
-        if (a.tefillahAbsences !== b.tefillahAbsences) {
-            return a.tefillahAbsences - b.tefillahAbsences;
-        }
-        return b.tefillahScore - a.tefillahScore;
-    });
-
-  let tefillahChampions = tefillahStats.filter(s => !s.isHiddenFromPodium);
-  if (tefillahChampions.length > 0) {
-      const firstPlace = tefillahChampions[0];
-      const allFirstPlaces = tefillahChampions.filter(s => 
-          s.tefillahAbsences === firstPlace.tefillahAbsences && 
-          s.tefillahScore === firstPlace.tefillahScore
-      );
-      if (allFirstPlaces.length > 3) {
-          tefillahChampions = allFirstPlaces;
-      } else {
-          tefillahChampions = tefillahChampions.slice(0, 3);
-      }
-  }
-
-  // Calculate all purchases for history view
-  const allPurchases = (Object.values(db) as Student[]).flatMap(s => 
-    (s.purchases || []).map(p => ({...p, studentName: s.name}))
-  ).sort((a, b) => b.timestamp - a.timestamp);
 
   return (
     <div 
@@ -991,6 +995,17 @@ function App() {
                </div>
             </div>
          </div>
+      )}
+
+      {showBatchCommenter && (
+        <BatchCommenter 
+          db={db}
+          onSave={(updatedDb) => {
+            saveDb(updatedDb);
+            setShowBatchCommenter(false);
+          }}
+          onClose={() => setShowBatchCommenter(false)}
+        />
       )}
 
       {showResetConfirm && (
