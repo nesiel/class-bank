@@ -626,30 +626,33 @@ function App() {
       className="flex flex-col h-screen bg-primary text-txt overflow-hidden font-sans transition-colors duration-300"
       style={themeVars as React.CSSProperties}
     >
-      <header className="flex-none bg-primary border-b-2 border-accent p-5 flex justify-between items-center z-30 shadow-2xl relative">
+      <header className="fixed top-0 left-0 right-0 h-16 bg-primary/80 backdrop-blur-md border-b border-accent/20 px-5 flex justify-between items-center z-40 shadow-sm transition-all">
         <div className="flex items-center gap-3">
           {config.logo ? (
-            <img src={config.logo} className="w-10 h-10 rounded-full border-2 border-accent object-cover" />
+            <img src={config.logo} className="w-9 h-9 rounded-full border border-accent object-cover shadow-sm" />
           ) : (
-            <div className="w-10 h-10 rounded-full border-2 border-accent/30 bg-accent/10 flex items-center justify-center text-accent">
-              <Coins size={20} />
+            <div className="w-9 h-9 rounded-full border border-accent/30 bg-accent/10 flex items-center justify-center text-accent shadow-sm">
+              <Coins size={18} />
             </div>
           )}
           <div>
-            <h1 className="text-xl font-black text-accent tracking-tight">הבנק הכיתתי</h1>
-            <p className="text-[9px] font-bold text-accent/50 uppercase tracking-widest">{config.slogan}</p>
+            <h1 className="text-lg font-black text-accent tracking-tight leading-none">הבנק הכיתתי</h1>
+            <p className="text-[9px] font-bold text-accent/50 uppercase tracking-widest leading-tight">{config.slogan}</p>
           </div>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => setCurrentView('contacts')} className="p-2 bg-white/5 rounded-full text-accent border border-white/5">
-            <Users size={20} />
+          <button 
+             onClick={() => setCurrentView('contacts')} 
+             className="w-9 h-9 flex items-center justify-center bg-card/50 rounded-full text-accent border border-white/5 active:bg-white/10 active:scale-95 transition-all shadow-sm"
+          >
+            <Users size={18} />
           </button>
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto pb-32">
+      <main className="flex-1 overflow-y-auto pt-20 pb-28 px-4 scroll-smooth no-scrollbar">
         {currentView === 'home' && (
-          <div className="px-4 pt-4 space-y-4 flex flex-col min-h-full">
+          <div className="space-y-4 flex flex-col min-h-full">
             <div className="flex-1 flex flex-col justify-center min-h-[30vh]">
                <Podium 
                  students={sorted.filter(s => !s.isHiddenFromPodium)} 
@@ -657,21 +660,21 @@ function App() {
                />
             </div>
             
-            <div className="bg-gradient-to-r from-accent/20 to-card border border-accent/30 p-4 rounded-2xl flex justify-between items-center shadow-lg">
-                <div className="flex items-center gap-3">
-                    <div className="bg-accent p-2 rounded-full text-accent-fg">
-                        <Coins size={20} />
+            <div className="bg-gradient-to-r from-accent/10 to-card border border-accent/20 p-5 rounded-3xl flex justify-between items-center shadow-lg active:scale-[0.99] transition-transform">
+                <div className="flex items-center gap-4">
+                    <div className="bg-accent p-2.5 rounded-2xl text-accent-fg shadow-lg shadow-accent/20">
+                        <Coins size={22} />
                     </div>
                     <div>
-                        <span className="text-xs font-bold text-accent/70 uppercase tracking-widest block">קופה כיתתית</span>
-                        <span className="font-bold text-txt">סך הכל נקודות</span>
+                        <span className="text-[10px] font-bold text-accent/70 uppercase tracking-widest block mb-0.5">קופה כיתתית</span>
+                        <span className="font-bold text-txt text-sm">סך הכל נקודות</span>
                     </div>
                 </div>
-                <span className="text-3xl font-black text-accent drop-shadow-md">{classTotal}₪</span>
+                <span className="text-3xl font-black text-accent drop-shadow-sm">{classTotal}₪</span>
             </div>
 
             {/* Tefillah Corner */}
-            <div className="bg-card border border-accent/30 rounded-2xl p-4 shadow-lg space-y-3 relative overflow-hidden transition-all">
+            <div className="bg-card border border-accent/30 rounded-3xl p-5 shadow-lg space-y-3 relative overflow-hidden transition-all">
                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-accent to-transparent opacity-50"></div>
                 
                 <div className="flex justify-between items-start">
@@ -681,16 +684,16 @@ function App() {
                     <span className="text-[10px] text-gray-400 bg-black/10 px-2 py-1 rounded-full border border-white/5">מצטייני התפילה</span>
                 </div>
 
-                <p className="text-xs text-txt/70 italic leading-relaxed border-r-2 border-accent/20 pr-2">
+                <p className="text-xs text-txt/70 italic leading-relaxed border-r-2 border-accent/20 pr-3">
                     "יְהִי רָצוֹן... שֶׁתַּשְׁרֶה שְׁכִינָה בְּמַעֲשֵׂה יָדֵינוּ, וְתַצְלִיחֵנוּ בְּלִמּוּדֵנוּ..."
                 </p>
 
                 {/* Champions Display */}
                 <div className="flex flex-wrap justify-center gap-2 mt-2">
                     {tefillahChampions.map((s, idx) => (
-                        <div key={idx} className="bg-black/10 p-2 rounded-xl flex flex-col items-center text-center border border-border active:scale-95 transition-transform w-[30%] min-w-[90px]" 
+                        <div key={idx} className="bg-black/10 p-2 rounded-2xl flex flex-col items-center text-center border border-border active:scale-95 transition-transform w-[30%] min-w-[90px]" 
                              onClick={() => { setSelectedStudent(s); setDetailsFilter('תפיל'); }}>
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold mb-1 shadow-md ${idx === 0 || (s.tefillahScore === tefillahChampions[0].tefillahScore && s.tefillahAbsences === tefillahChampions[0].tefillahAbsences) ? 'bg-yellow-500 text-black' : 'bg-white/10 text-gray-500'}`}>
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold mb-1 shadow-md ${idx === 0 || (s.tefillahScore === tefillahChampions[0].tefillahScore && s.tefillahAbsences === tefillahChampions[0].tefillahAbsences) ? 'bg-yellow-500 text-black' : 'bg-white/10 text-gray-500'}`}>
                             {idx + 1}
                         </div>
                         <span className="text-xs font-bold truncate w-full text-txt">{s.name}</span>
@@ -711,20 +714,20 @@ function App() {
                 </div>
 
                 {/* Full List Button */}
-                <button onClick={() => setShowAllTefillah(!showAllTefillah)} className="w-full mt-2 py-2 text-[10px] font-bold text-accent/50 uppercase flex justify-center items-center gap-2 border-t border-border">
+                <button onClick={() => setShowAllTefillah(!showAllTefillah)} className="w-full mt-2 py-3 text-[10px] font-bold text-accent/50 uppercase flex justify-center items-center gap-2 border-t border-border bg-black/5 rounded-xl hover:bg-black/10 transition-colors">
                     {showAllTefillah ? 'צמצם רשימת תפילה' : 'הצג את כל הכיתה'} {showAllTefillah ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}
                 </button>
 
                 {/* Expanded List */}
                 {showAllTefillah && (
-                    <div className="mt-2 divide-y divide-border bg-black/10 rounded-xl max-h-60 overflow-y-auto">
+                    <div className="mt-2 divide-y divide-border bg-black/10 rounded-2xl max-h-60 overflow-y-auto custom-scrollbar">
                         {tefillahStats.map((s, i) => (
                             <div key={s.name} 
                                  onClick={() => { setSelectedStudent(s); setDetailsFilter('תפיל'); }} 
-                                 className="p-3 flex justify-between items-center active:bg-white/5 cursor-pointer hover:bg-white/5"
+                                 className="p-3 flex justify-between items-center active:bg-white/5 cursor-pointer"
                             >
                                 <div className="flex items-center gap-3">
-                                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold bg-white/5 text-gray-500`}>{i + 1}</span>
+                                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold bg-white/5 text-gray-500`}>{i + 1}</span>
                                     <div className="flex flex-col">
                                         <span className="text-xs font-bold text-txt">{s.name}</span>
                                         <span className="text-[9px] text-gray-500 flex gap-2">
@@ -741,9 +744,9 @@ function App() {
                 )}
             </div>
 
-             <button onClick={() => setShowRules(true)} className="w-full bg-card border border-accent/30 rounded-2xl p-4 flex items-center justify-between active:scale-95 transition-transform">
+             <button onClick={() => setShowRules(true)} className="w-full bg-card border border-accent/30 rounded-3xl p-4 flex items-center justify-between active:scale-95 transition-transform shadow-md">
                 <div className="flex items-center gap-3">
-                    <div className="bg-accent/10 p-2 rounded-full text-accent">
+                    <div className="bg-accent/10 p-2.5 rounded-full text-accent">
                         <Book size={20} />
                     </div>
                     <span className="font-bold text-sm text-txt">תקנון הכיתה</span>
@@ -751,17 +754,17 @@ function App() {
                 <ChevronDown size={16} className="text-gray-500"/>
              </button>
 
-            <div className="bg-card border border-accent/30 rounded-[2rem] overflow-hidden shadow-2xl">
-                <div className="p-5 border-b border-border flex justify-between items-center">
-                    <h3 className="font-bold text-accent flex items-center gap-2"><Trophy size={16} /> טבלת הניקוד</h3>
-                    <input type="text" placeholder="חפש תלמיד..." className="bg-black/10 border border-border rounded-full py-1.5 px-4 text-xs w-32 outline-none text-txt placeholder-gray-500" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+            <div className="bg-card border border-accent/30 rounded-[2rem] overflow-hidden shadow-2xl mb-6">
+                <div className="p-5 border-b border-border flex justify-between items-center bg-black/5">
+                    <h3 className="font-bold text-accent flex items-center gap-2"><Trophy size={18} /> טבלת הניקוד</h3>
+                    <input type="text" placeholder="חפש תלמיד..." className="bg-black/10 border border-border rounded-full py-1.5 px-4 text-xs w-32 outline-none text-txt placeholder-gray-500 focus:border-accent transition-colors" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
                 </div>
                 <div className="divide-y divide-border">
                     {(searchQuery || showAll ? filtered : filtered.slice(0, 5)).map((s, i) => (
-                        <div key={s.name} onClick={() => { setSelectedStudent(s); setDetailsFilter(""); }} className="p-5 flex justify-between items-center active:bg-white/5 cursor-pointer">
+                        <div key={s.name} onClick={() => { setSelectedStudent(s); setDetailsFilter(""); }} className="p-4 flex justify-between items-center active:bg-white/5 cursor-pointer transition-colors">
                             <div className="flex items-center gap-4">
-                                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${i < 3 ? 'bg-accent text-accent-fg' : 'bg-white/10 text-gray-500'}`}>{sorted.indexOf(s) + 1}</span>
-                                <span className="font-bold text-txt">{s.name}</span>
+                                <span className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shadow-sm ${i < 3 ? 'bg-accent text-accent-fg' : 'bg-white/10 text-gray-500'}`}>{sorted.indexOf(s) + 1}</span>
+                                <span className="font-bold text-sm text-txt">{s.name}</span>
                                 {isEligibleForNachat(s) && (
                                   <button 
                                     onClick={(e) => handleSendNachat(e, s)}
@@ -772,12 +775,12 @@ function App() {
                                   </button>
                                 )}
                             </div>
-                            <span className="font-black text-accent">{s.total}₪</span>
+                            <span className="font-black text-accent text-lg">{s.total}₪</span>
                         </div>
                     ))}
                 </div>
                 {!searchQuery && filtered.length > 5 && (
-                  <button onClick={() => setShowAll(!showAll)} className="w-full py-4 text-[10px] font-bold text-accent/50 uppercase flex justify-center items-center gap-2 border-t border-border">
+                  <button onClick={() => setShowAll(!showAll)} className="w-full py-4 text-[10px] font-bold text-accent/50 uppercase flex justify-center items-center gap-2 border-t border-border hover:bg-white/5 transition-colors">
                     {showAll ? 'צמצם' : 'הצג הכל'} {showAll ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}
                   </button>
                 )}
@@ -810,17 +813,17 @@ function App() {
         )}
 
         {currentView === 'admin' && (
-          <div className="p-6 space-y-4">
+          <div className="space-y-4 pb-8">
             
-             <div className="flex justify-between items-center pb-2 border-b border-border">
+             <div className="flex justify-between items-center pb-2 border-b border-border mb-4">
                  <h2 className="text-2xl font-black text-accent flex items-center gap-3">
                      <ShieldCheck size={28}/> ניהול המערכת
                  </h2>
                  <button 
                     onClick={() => setIsReordering(!isReordering)}
-                    className={`text-xs px-3 py-1 rounded-full font-bold transition-colors ${isReordering ? 'bg-green-600 text-white' : 'bg-white/5 text-gray-400'}`}
+                    className={`text-xs px-3 py-1.5 rounded-full font-bold transition-colors ${isReordering ? 'bg-green-600 text-white shadow-lg' : 'bg-white/5 text-gray-400 border border-white/5'}`}
                  >
-                     {isReordering ? 'סיום עריכת סדר' : 'שנה סדר תצוגה'}
+                     {isReordering ? 'סיום עריכת סדר' : 'שנה סדר'}
                  </button>
              </div>
 
@@ -836,7 +839,7 @@ function App() {
                      return (
                          <div 
                             key={sectionId}
-                            className={`bg-card rounded-[2rem] border border-border shadow-lg overflow-hidden transition-all ${isReordering ? 'opacity-80 scale-[0.98] border-dashed border-accent' : ''}`}
+                            className={`bg-card rounded-[2rem] border border-border shadow-md overflow-hidden transition-all ${isReordering ? 'opacity-80 scale-[0.98] border-dashed border-accent' : ''}`}
                          >
                              {/* Header */}
                              <div 
@@ -889,17 +892,17 @@ function App() {
         )}
 
         {currentView === 'contacts' && (
-          <div className="p-6 space-y-4">
+          <div className="space-y-4 pb-6">
             <h2 className="text-2xl font-black text-accent flex items-center gap-3"><Users size={28}/> ספר טלפונים</h2>
             {sorted.map(s => (
-              <div key={s.name} className="bg-card p-5 rounded-3xl border border-border flex justify-between items-center shadow-lg active:bg-white/5 cursor-pointer" onClick={() => { setSelectedStudent(s); setDetailsFilter(""); }}>
+              <div key={s.name} className="bg-card p-5 rounded-3xl border border-border flex justify-between items-center shadow-md active:scale-[0.98] transition-transform cursor-pointer" onClick={() => { setSelectedStudent(s); setDetailsFilter(""); }}>
                 <div>
                   <p className="font-bold text-sm text-txt">{s.name}</p>
                   <p className="text-[10px] text-gray-500 mt-1">
                     {s.nameMother ? `אמא: ${s.nameMother}` : 'חסר פרטי אם'} • {s.nameFather ? `אבא: ${s.nameFather}` : 'חסר פרטי אב'}
                   </p>
                 </div>
-                <div className="p-3 bg-accent/10 rounded-full text-accent">
+                <div className="p-3 bg-accent/10 rounded-full text-accent shadow-sm">
                   <Phone size={20} />
                 </div>
               </div>
@@ -911,8 +914,8 @@ function App() {
       
       {/* Undo Toast */}
       {undoState && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-5 fade-in duration-300 w-[90%] max-w-sm">
-            <div className="bg-[#333] border border-white/10 text-white px-4 py-3 rounded-full shadow-2xl flex items-center justify-between gap-4">
+        <div className="fixed bottom-28 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-5 fade-in duration-300 w-[90%] max-w-sm">
+            <div className="bg-[#333] border border-white/10 text-white px-4 py-3 rounded-full shadow-2xl flex items-center justify-between gap-4 backdrop-blur-md">
                 <div className="flex items-center gap-2 text-sm">
                     <span className="text-gray-400 text-xs">הוסר מהפודיום:</span>
                     <span className="font-bold truncate max-w-[120px]">{undoState.name}</span>
@@ -927,18 +930,19 @@ function App() {
         </div>
       )}
 
-      <nav className="flex-none bg-card p-2 flex justify-around items-center border-t border-accent/30 z-30 pb-safe shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
-        <button onClick={() => setCurrentView('home')} className={`p-4 rounded-2xl transition-all ${currentView === 'home' ? 'bg-accent text-accent-fg shadow-lg scale-110 -translate-y-2' : 'text-gray-400 hover:text-txt hover:bg-white/5'}`}>
-          <Home size={24} />
+      {/* Floating Bottom Navigation */}
+      <nav className="fixed bottom-5 left-4 right-4 bg-card/85 backdrop-blur-xl border border-white/10 p-2 rounded-[2rem] flex justify-between items-center shadow-[0_8px_32px_rgba(0,0,0,0.4)] z-50 max-w-md mx-auto">
+        <button onClick={() => setCurrentView('home')} className={`p-3.5 rounded-full transition-all duration-300 ${currentView === 'home' ? 'bg-accent text-accent-fg shadow-lg shadow-accent/20 scale-105' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+          <Home size={22} />
         </button>
-        <button onClick={() => setCurrentView('seating')} className={`p-4 rounded-2xl transition-all ${currentView === 'seating' ? 'bg-accent text-accent-fg shadow-lg scale-110 -translate-y-2' : 'text-gray-400 hover:text-txt hover:bg-white/5'}`}>
-          <LayoutGrid size={24} />
+        <button onClick={() => setCurrentView('seating')} className={`p-3.5 rounded-full transition-all duration-300 ${currentView === 'seating' ? 'bg-accent text-accent-fg shadow-lg shadow-accent/20 scale-105' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+          <LayoutGrid size={22} />
         </button>
-        <button onClick={() => setCurrentView('store')} className={`p-4 rounded-2xl transition-all ${currentView === 'store' ? 'bg-accent text-accent-fg shadow-lg scale-110 -translate-y-2' : 'text-gray-400 hover:text-txt hover:bg-white/5'}`}>
-          <ShoppingBag size={24} />
+        <button onClick={() => setCurrentView('store')} className={`p-3.5 rounded-full transition-all duration-300 ${currentView === 'store' ? 'bg-accent text-accent-fg shadow-lg shadow-accent/20 scale-105' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+          <ShoppingBag size={22} />
         </button>
-        <button onClick={() => setCurrentView('admin')} className={`p-4 rounded-2xl transition-all ${currentView === 'admin' ? 'bg-accent text-accent-fg shadow-lg scale-110 -translate-y-2' : 'text-gray-400 hover:text-txt hover:bg-white/5'}`}>
-          <ShieldCheck size={24} />
+        <button onClick={() => setCurrentView('admin')} className={`p-3.5 rounded-full transition-all duration-300 ${currentView === 'admin' ? 'bg-accent text-accent-fg shadow-lg shadow-accent/20 scale-105' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+          <ShieldCheck size={22} />
         </button>
       </nav>
 
@@ -984,11 +988,16 @@ function App() {
       )}
 
       {showRules && (
-         <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-            <div className="bg-card w-full max-w-md rounded-3xl border border-accent/30 p-6 relative shadow-2xl">
-               <button onClick={() => setShowRules(false)} className="absolute top-4 left-4 p-2 bg-white/5 rounded-full text-txt hover:bg-white/10"><X size={20}/></button>
-               <h2 className="text-2xl font-black text-accent mb-4 text-center">תקנון הכיתה</h2>
-               <div className="text-txt/80 whitespace-pre-line leading-relaxed text-center">
+         <div className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in">
+            <div className="bg-card w-full max-w-md rounded-[2rem] border border-accent/30 p-8 relative shadow-2xl">
+               <button onClick={() => setShowRules(false)} className="absolute top-4 left-4 p-2 bg-white/5 rounded-full text-txt hover:bg-white/10 active:scale-90 transition-transform"><X size={20}/></button>
+               <div className="text-center mb-6">
+                   <div className="inline-block p-3 rounded-full bg-accent/10 text-accent mb-2">
+                       <Book size={32} />
+                   </div>
+                   <h2 className="text-2xl font-black text-accent">תקנון הכיתה</h2>
+               </div>
+               <div className="text-txt/80 whitespace-pre-line leading-relaxed text-center text-sm font-medium">
                   {config.rules}
                </div>
             </div>
@@ -1007,13 +1016,16 @@ function App() {
       )}
 
       {showResetConfirm && (
-        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-           <div className="bg-card w-full max-w-sm rounded-3xl border border-red-500/30 p-6 text-center">
-               <h3 className="text-xl font-bold text-red-500 mb-2">אזהרה!</h3>
-               <p className="text-txt/80 mb-6 text-sm">פעולה זו תמחק את כל הנתונים, התלמידים וההגדרות.<br/>האם להמשיך?</p>
+        <div className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in">
+           <div className="bg-card w-full max-w-sm rounded-[2rem] border border-red-500/30 p-8 text-center">
+               <div className="inline-block p-4 rounded-full bg-red-500/10 text-red-500 mb-4">
+                   <Trash2 size={40} />
+               </div>
+               <h3 className="text-2xl font-bold text-red-500 mb-2">אזהרה!</h3>
+               <p className="text-txt/70 mb-8 text-sm leading-relaxed">פעולה זו תמחק את כל הנתונים, התלמידים וההגדרות.<br/>האם להמשיך?</p>
                <div className="flex gap-3">
-                  <button onClick={() => setShowResetConfirm(false)} className="flex-1 py-3 bg-white/10 rounded-xl font-bold text-txt">ביטול</button>
-                  <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold shadow-lg shadow-red-600/20">כן, אפס הכל</button>
+                  <button onClick={() => setShowResetConfirm(false)} className="flex-1 py-3.5 bg-white/10 rounded-2xl font-bold text-txt active:scale-95 transition-transform">ביטול</button>
+                  <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="flex-1 py-3.5 bg-red-600 text-white rounded-2xl font-bold shadow-lg shadow-red-600/20 active:scale-95 transition-transform">כן, אפס הכל</button>
                </div>
            </div>
         </div>
