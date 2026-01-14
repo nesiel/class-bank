@@ -650,265 +650,276 @@ function App() {
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto pt-20 pb-28 px-4 scroll-smooth no-scrollbar">
-        {currentView === 'home' && (
-          <div className="space-y-4 flex flex-col min-h-full">
-            <div className="flex-1 flex flex-col justify-center min-h-[30vh]">
-               <Podium 
-                 students={sorted.filter(s => !s.isHiddenFromPodium)} 
-                 onRemoveStudent={handleRemoveFromPodium}
-               />
-            </div>
-            
-            <div className="bg-gradient-to-r from-accent/10 to-card border border-accent/20 p-5 rounded-3xl flex justify-between items-center shadow-lg active:scale-[0.99] transition-transform">
-                <div className="flex items-center gap-4">
-                    <div className="bg-accent p-2.5 rounded-2xl text-accent-fg shadow-lg shadow-accent/20">
-                        <Coins size={22} />
+      <main className="flex-1 relative overflow-hidden bg-primary">
+          
+          {/* Scrollable Document Views (Home, Admin, Contacts) */}
+          {(currentView === 'home' || currentView === 'admin' || currentView === 'contacts') && (
+              <div className="absolute inset-0 overflow-y-auto pt-20 pb-40 px-4 scroll-smooth no-scrollbar custom-scroll-container">
+                  {currentView === 'home' && (
+                    <div className="space-y-4 flex flex-col min-h-full">
+                      <div className="flex-1 flex flex-col justify-center min-h-[30vh]">
+                        <Podium 
+                          students={sorted.filter(s => !s.isHiddenFromPodium)} 
+                          onRemoveStudent={handleRemoveFromPodium}
+                        />
+                      </div>
+                      
+                      <div className="bg-gradient-to-r from-accent/10 to-card border border-accent/20 p-5 rounded-3xl flex justify-between items-center shadow-lg active:scale-[0.99] transition-transform">
+                          <div className="flex items-center gap-4">
+                              <div className="bg-accent p-2.5 rounded-2xl text-accent-fg shadow-lg shadow-accent/20">
+                                  <Coins size={22} />
+                              </div>
+                              <div>
+                                  <span className="text-[10px] font-bold text-accent/70 uppercase tracking-widest block mb-0.5">קופה כיתתית</span>
+                                  <span className="font-bold text-txt text-sm">סך הכל נקודות</span>
+                              </div>
+                          </div>
+                          <span className="text-3xl font-black text-accent drop-shadow-sm">{classTotal}₪</span>
+                      </div>
+
+                      {/* Tefillah Corner */}
+                      <div className="bg-card border border-accent/30 rounded-3xl p-5 shadow-lg space-y-3 relative overflow-hidden transition-all">
+                          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-accent to-transparent opacity-50"></div>
+                          
+                          <div className="flex justify-between items-start">
+                              <h3 className="font-bold text-accent flex items-center gap-2">
+                                  <Scroll size={18} /> פינת התפילה
+                              </h3>
+                              <span className="text-[10px] text-gray-400 bg-black/10 px-2 py-1 rounded-full border border-white/5">מצטייני התפילה</span>
+                          </div>
+
+                          <p className="text-xs text-txt/70 italic leading-relaxed border-r-2 border-accent/20 pr-3">
+                              "יְהִי רָצוֹן... שֶׁתַּשְׁרֶה שְׁכִינָה בְּמַעֲשֵׂה יָדֵינוּ, וְתַצְלִיחֵנוּ בְּלִמּוּדֵנוּ..."
+                          </p>
+
+                          {/* Champions Display */}
+                          <div className="flex flex-wrap justify-center gap-2 mt-2">
+                              {tefillahChampions.map((s, idx) => (
+                                  <div key={idx} className="bg-black/10 p-2 rounded-2xl flex flex-col items-center text-center border border-border active:scale-95 transition-transform w-[30%] min-w-[90px]" 
+                                      onClick={() => { setSelectedStudent(s); setDetailsFilter('תפיל'); }}>
+                                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold mb-1 shadow-md ${idx === 0 || (s.tefillahScore === tefillahChampions[0].tefillahScore && s.tefillahAbsences === tefillahChampions[0].tefillahAbsences) ? 'bg-yellow-500 text-black' : 'bg-white/10 text-gray-500'}`}>
+                                      {idx + 1}
+                                  </div>
+                                  <span className="text-xs font-bold truncate w-full text-txt">{s.name}</span>
+                                  <span className="text-[10px] text-accent font-black">{s.tefillahScore}₪</span>
+                                  <div className="flex items-center gap-2 mt-1 justify-center w-full">
+                                      {s.goodWordsTefillah > 0 && (
+                                          <span className="text-[8px] text-green-500 flex items-center gap-0.5"><Star size={8} fill="currentColor"/> {s.goodWordsTefillah}</span>
+                                      )}
+                                      {s.tefillahAbsences > 0 && (
+                                          <span className="text-[8px] text-red-500 flex items-center gap-0.5"><AlertCircle size={8} /> {s.tefillahAbsences}</span>
+                                      )}
+                                  </div>
+                                  </div>
+                              ))}
+                              {tefillahChampions.length === 0 && (
+                                  <div className="w-full text-center text-[10px] text-gray-500 py-2">אין נתוני תפילה (טענו מחדש אקסל אם חסר)</div>
+                              )}
+                          </div>
+
+                          {/* Full List Button */}
+                          <button onClick={() => setShowAllTefillah(!showAllTefillah)} className="w-full mt-2 py-3 text-[10px] font-bold text-accent/50 uppercase flex justify-center items-center gap-2 border-t border-border bg-black/5 rounded-xl hover:bg-black/10 transition-colors">
+                              {showAllTefillah ? 'צמצם רשימת תפילה' : 'הצג את כל הכיתה'} {showAllTefillah ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}
+                          </button>
+
+                          {/* Expanded List */}
+                          {showAllTefillah && (
+                              <div className="mt-2 divide-y divide-border bg-black/10 rounded-2xl max-h-60 overflow-y-auto custom-scrollbar">
+                                  {tefillahStats.map((s, i) => (
+                                      <div key={s.name} 
+                                          onClick={() => { setSelectedStudent(s); setDetailsFilter('תפיל'); }} 
+                                          className="p-3 flex justify-between items-center active:bg-white/5 cursor-pointer"
+                                      >
+                                          <div className="flex items-center gap-3">
+                                              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold bg-white/5 text-gray-500`}>{i + 1}</span>
+                                              <div className="flex flex-col">
+                                                  <span className="text-xs font-bold text-txt">{s.name}</span>
+                                                  <span className="text-[9px] text-gray-500 flex gap-2">
+                                                      {s.tefillahAbsences > 0 ? <span className="text-red-500">חסר: {s.tefillahAbsences}</span> : <span className="text-green-500">נוכחות מלאה</span>}
+                                                  </span>
+                                              </div>
+                                          </div>
+                                          <span className={`text-xs font-black ${s.tefillahScore > 0 ? 'text-green-500' : s.tefillahScore < 0 ? 'text-red-500' : 'text-gray-500'}`}>
+                                              {s.tefillahScore}₪
+                                          </span>
+                                      </div>
+                                  ))}
+                              </div>
+                          )}
+                      </div>
+
+                      <button onClick={() => setShowRules(true)} className="w-full bg-card border border-accent/30 rounded-3xl p-4 flex items-center justify-between active:scale-95 transition-transform shadow-md">
+                          <div className="flex items-center gap-3">
+                              <div className="bg-accent/10 p-2.5 rounded-full text-accent">
+                                  <Book size={20} />
+                              </div>
+                              <span className="font-bold text-sm text-txt">תקנון הכיתה</span>
+                          </div>
+                          <ChevronDown size={16} className="text-gray-500"/>
+                      </button>
+
+                      <div className="bg-card border border-accent/30 rounded-[2rem] overflow-hidden shadow-2xl mb-6">
+                          <div className="p-5 border-b border-border flex justify-between items-center bg-black/5">
+                              <h3 className="font-bold text-accent flex items-center gap-2"><Trophy size={18} /> טבלת הניקוד</h3>
+                              <input type="text" placeholder="חפש תלמיד..." className="bg-black/10 border border-border rounded-full py-1.5 px-4 text-xs w-32 outline-none text-txt placeholder-gray-500 focus:border-accent transition-colors" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+                          </div>
+                          <div className="divide-y divide-border">
+                              {(searchQuery || showAll ? filtered : filtered.slice(0, 5)).map((s, i) => (
+                                  <div key={s.name} onClick={() => { setSelectedStudent(s); setDetailsFilter(""); }} className="p-4 flex justify-between items-center active:bg-white/5 cursor-pointer transition-colors">
+                                      <div className="flex items-center gap-4">
+                                          <span className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shadow-sm ${i < 3 ? 'bg-accent text-accent-fg' : 'bg-white/10 text-gray-500'}`}>{sorted.indexOf(s) + 1}</span>
+                                          <span className="font-bold text-sm text-txt">{s.name}</span>
+                                          {isEligibleForNachat(s) && (
+                                            <button 
+                                              onClick={(e) => handleSendNachat(e, s)}
+                                              className="p-1.5 bg-green-500/10 text-green-500 rounded-full hover:bg-green-500 hover:text-white transition-colors"
+                                              title="שלח הודעת נחת על תפקוד טוב"
+                                            >
+                                              <MessageCircle size={14} />
+                                            </button>
+                                          )}
+                                      </div>
+                                      <span className="font-black text-accent text-lg">{s.total}₪</span>
+                                  </div>
+                              ))}
+                          </div>
+                          {!searchQuery && filtered.length > 5 && (
+                            <button onClick={() => setShowAll(!showAll)} className="w-full py-4 text-[10px] font-bold text-accent/50 uppercase flex justify-center items-center gap-2 border-t border-border hover:bg-white/5 transition-colors">
+                              {showAll ? 'צמצם' : 'הצג הכל'} {showAll ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}
+                            </button>
+                          )}
+                      </div>
                     </div>
-                    <div>
-                        <span className="text-[10px] font-bold text-accent/70 uppercase tracking-widest block mb-0.5">קופה כיתתית</span>
-                        <span className="font-bold text-txt text-sm">סך הכל נקודות</span>
-                    </div>
-                </div>
-                <span className="text-3xl font-black text-accent drop-shadow-sm">{classTotal}₪</span>
-            </div>
+                  )}
 
-            {/* Tefillah Corner */}
-            <div className="bg-card border border-accent/30 rounded-3xl p-5 shadow-lg space-y-3 relative overflow-hidden transition-all">
-                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-accent to-transparent opacity-50"></div>
-                
-                <div className="flex justify-between items-start">
-                    <h3 className="font-bold text-accent flex items-center gap-2">
-                        <Scroll size={18} /> פינת התפילה
-                    </h3>
-                    <span className="text-[10px] text-gray-400 bg-black/10 px-2 py-1 rounded-full border border-white/5">מצטייני התפילה</span>
-                </div>
+                  {currentView === 'admin' && (
+                    <div className="space-y-4 pb-8">
+                      
+                      <div className="flex justify-between items-center pb-2 border-b border-border mb-4">
+                          <h2 className="text-2xl font-black text-accent flex items-center gap-3">
+                              <ShieldCheck size={28}/> ניהול המערכת
+                          </h2>
+                          <button 
+                              onClick={() => setIsReordering(!isReordering)}
+                              className={`text-xs px-3 py-1.5 rounded-full font-bold transition-colors ${isReordering ? 'bg-green-600 text-white shadow-lg' : 'bg-white/5 text-gray-400 border border-white/5'}`}
+                          >
+                              {isReordering ? 'סיום עריכת סדר' : 'שנה סדר'}
+                          </button>
+                      </div>
 
-                <p className="text-xs text-txt/70 italic leading-relaxed border-r-2 border-accent/20 pr-3">
-                    "יְהִי רָצוֹן... שֶׁתַּשְׁרֶה שְׁכִינָה בְּמַעֲשֵׂה יָדֵינוּ, וְתַצְלִיחֵנוּ בְּלִמּוּדֵנוּ..."
-                </p>
-
-                {/* Champions Display */}
-                <div className="flex flex-wrap justify-center gap-2 mt-2">
-                    {tefillahChampions.map((s, idx) => (
-                        <div key={idx} className="bg-black/10 p-2 rounded-2xl flex flex-col items-center text-center border border-border active:scale-95 transition-transform w-[30%] min-w-[90px]" 
-                             onClick={() => { setSelectedStudent(s); setDetailsFilter('תפיל'); }}>
-                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold mb-1 shadow-md ${idx === 0 || (s.tefillahScore === tefillahChampions[0].tefillahScore && s.tefillahAbsences === tefillahChampions[0].tefillahAbsences) ? 'bg-yellow-500 text-black' : 'bg-white/10 text-gray-500'}`}>
-                            {idx + 1}
-                        </div>
-                        <span className="text-xs font-bold truncate w-full text-txt">{s.name}</span>
-                        <span className="text-[10px] text-accent font-black">{s.tefillahScore}₪</span>
-                        <div className="flex items-center gap-2 mt-1 justify-center w-full">
-                            {s.goodWordsTefillah > 0 && (
-                                <span className="text-[8px] text-green-500 flex items-center gap-0.5"><Star size={8} fill="currentColor"/> {s.goodWordsTefillah}</span>
-                            )}
-                            {s.tefillahAbsences > 0 && (
-                                <span className="text-[8px] text-red-500 flex items-center gap-0.5"><AlertCircle size={8} /> {s.tefillahAbsences}</span>
-                            )}
-                        </div>
-                        </div>
-                    ))}
-                    {tefillahChampions.length === 0 && (
-                        <div className="w-full text-center text-[10px] text-gray-500 py-2">אין נתוני תפילה (טענו מחדש אקסל אם חסר)</div>
-                    )}
-                </div>
-
-                {/* Full List Button */}
-                <button onClick={() => setShowAllTefillah(!showAllTefillah)} className="w-full mt-2 py-3 text-[10px] font-bold text-accent/50 uppercase flex justify-center items-center gap-2 border-t border-border bg-black/5 rounded-xl hover:bg-black/10 transition-colors">
-                    {showAllTefillah ? 'צמצם רשימת תפילה' : 'הצג את כל הכיתה'} {showAllTefillah ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}
-                </button>
-
-                {/* Expanded List */}
-                {showAllTefillah && (
-                    <div className="mt-2 divide-y divide-border bg-black/10 rounded-2xl max-h-60 overflow-y-auto custom-scrollbar">
-                        {tefillahStats.map((s, i) => (
-                            <div key={s.name} 
-                                 onClick={() => { setSelectedStudent(s); setDetailsFilter('תפיל'); }} 
-                                 className="p-3 flex justify-between items-center active:bg-white/5 cursor-pointer"
-                            >
-                                <div className="flex items-center gap-3">
-                                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold bg-white/5 text-gray-500`}>{i + 1}</span>
-                                    <div className="flex flex-col">
-                                        <span className="text-xs font-bold text-txt">{s.name}</span>
-                                        <span className="text-[9px] text-gray-500 flex gap-2">
-                                            {s.tefillahAbsences > 0 ? <span className="text-red-500">חסר: {s.tefillahAbsences}</span> : <span className="text-green-500">נוכחות מלאה</span>}
-                                        </span>
-                                    </div>
-                                </div>
-                                <span className={`text-xs font-black ${s.tefillahScore > 0 ? 'text-green-500' : s.tefillahScore < 0 ? 'text-red-500' : 'text-gray-500'}`}>
-                                    {s.tefillahScore}₪
-                                </span>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </div>
-
-             <button onClick={() => setShowRules(true)} className="w-full bg-card border border-accent/30 rounded-3xl p-4 flex items-center justify-between active:scale-95 transition-transform shadow-md">
-                <div className="flex items-center gap-3">
-                    <div className="bg-accent/10 p-2.5 rounded-full text-accent">
-                        <Book size={20} />
-                    </div>
-                    <span className="font-bold text-sm text-txt">תקנון הכיתה</span>
-                </div>
-                <ChevronDown size={16} className="text-gray-500"/>
-             </button>
-
-            <div className="bg-card border border-accent/30 rounded-[2rem] overflow-hidden shadow-2xl mb-6">
-                <div className="p-5 border-b border-border flex justify-between items-center bg-black/5">
-                    <h3 className="font-bold text-accent flex items-center gap-2"><Trophy size={18} /> טבלת הניקוד</h3>
-                    <input type="text" placeholder="חפש תלמיד..." className="bg-black/10 border border-border rounded-full py-1.5 px-4 text-xs w-32 outline-none text-txt placeholder-gray-500 focus:border-accent transition-colors" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
-                </div>
-                <div className="divide-y divide-border">
-                    {(searchQuery || showAll ? filtered : filtered.slice(0, 5)).map((s, i) => (
-                        <div key={s.name} onClick={() => { setSelectedStudent(s); setDetailsFilter(""); }} className="p-4 flex justify-between items-center active:bg-white/5 cursor-pointer transition-colors">
-                            <div className="flex items-center gap-4">
-                                <span className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shadow-sm ${i < 3 ? 'bg-accent text-accent-fg' : 'bg-white/10 text-gray-500'}`}>{sorted.indexOf(s) + 1}</span>
-                                <span className="font-bold text-sm text-txt">{s.name}</span>
-                                {isEligibleForNachat(s) && (
-                                  <button 
-                                    onClick={(e) => handleSendNachat(e, s)}
-                                    className="p-1.5 bg-green-500/10 text-green-500 rounded-full hover:bg-green-500 hover:text-white transition-colors"
-                                    title="שלח הודעת נחת על תפקוד טוב"
+                      <div className="space-y-4">
+                          {adminOrder.map((sectionId, index) => {
+                              const sectionDef = ADMIN_SECTIONS.find(s => s.id === sectionId);
+                              if (!sectionDef) return null;
+                              const isCollapsed = adminCollapsed[sectionId];
+                              
+                              // Force expand Import/Export as they are just buttons
+                              const isAlwaysExpanded = sectionId === 'import_files' || sectionId === 'backup_reset' || sectionId === 'theme_settings';
+                              
+                              return (
+                                  <div 
+                                      key={sectionId}
+                                      className={`bg-card rounded-[2rem] border border-border shadow-md overflow-hidden transition-all ${isReordering ? 'opacity-80 scale-[0.98] border-dashed border-accent' : ''}`}
                                   >
-                                    <MessageCircle size={14} />
-                                  </button>
-                                )}
-                            </div>
-                            <span className="font-black text-accent text-lg">{s.total}₪</span>
+                                      {/* Header */}
+                                      <div 
+                                          className={`p-4 flex items-center justify-between ${!isAlwaysExpanded ? 'cursor-pointer active:bg-white/5' : ''}`}
+                                          onClick={() => {
+                                              if (isReordering) return;
+                                              if (!isAlwaysExpanded) toggleAdminSection(sectionId);
+                                          }}
+                                      >
+                                          <div className="flex items-center gap-3">
+                                              {isReordering && (
+                                                  <div className="flex flex-col gap-1 mr-2">
+                                                      <button 
+                                                          onClick={(e) => { e.stopPropagation(); moveItem(index, 'up'); }} 
+                                                          disabled={index === 0} 
+                                                          className="text-gray-500 disabled:opacity-20 hover:text-white"
+                                                      >
+                                                          <ArrowUp size={14}/>
+                                                      </button>
+                                                      <button 
+                                                          onClick={(e) => { e.stopPropagation(); moveItem(index, 'down'); }} 
+                                                          disabled={index === adminOrder.length - 1} 
+                                                          className="text-gray-500 disabled:opacity-20 hover:text-white"
+                                                      >
+                                                          <ArrowDown size={14}/>
+                                                      </button>
+                                                  </div>
+                                              )}
+                                              <div className={`p-2 rounded-xl ${sectionDef.bg} ${sectionDef.color}`}>
+                                                  <sectionDef.icon size={20} />
+                                              </div>
+                                              <h3 className="font-bold text-sm text-txt uppercase tracking-wide">{sectionDef.label}</h3>
+                                          </div>
+                                          {!isAlwaysExpanded && !isReordering && (
+                                              isCollapsed ? <ChevronDown size={16} className="text-gray-500"/> : <ChevronUp size={16} className="text-gray-500"/>
+                                          )}
+                                      </div>
+                                      
+                                      {/* Content */}
+                                      {(!isCollapsed || isAlwaysExpanded) && (
+                                          <div className="p-4 pt-0 animate-in slide-in-from-top-2 fade-in">
+                                              {renderAdminSectionContent(sectionId)}
+                                          </div>
+                                      )}
+                                  </div>
+                              );
+                          })}
+                      </div>
+                    </div>
+                  )}
+
+                  {currentView === 'contacts' && (
+                    <div className="space-y-4 pb-6">
+                      <h2 className="text-2xl font-black text-accent flex items-center gap-3"><Users size={28}/> ספר טלפונים</h2>
+                      {sorted.map(s => (
+                        <div key={s.name} className="bg-card p-5 rounded-3xl border border-border flex justify-between items-center shadow-md active:scale-[0.98] transition-transform cursor-pointer" onClick={() => { setSelectedStudent(s); setDetailsFilter(""); }}>
+                          <div>
+                            <p className="font-bold text-sm text-txt">{s.name}</p>
+                            <p className="text-[10px] text-gray-500 mt-1">
+                              {s.nameMother ? `אמא: ${s.nameMother}` : 'חסר פרטי אם'} • {s.nameFather ? `אבא: ${s.nameFather}` : 'חסר פרטי אב'}
+                            </p>
+                          </div>
+                          <div className="p-3 bg-accent/10 rounded-full text-accent shadow-sm">
+                            <Phone size={20} />
+                          </div>
                         </div>
-                    ))}
-                </div>
-                {!searchQuery && filtered.length > 5 && (
-                  <button onClick={() => setShowAll(!showAll)} className="w-full py-4 text-[10px] font-bold text-accent/50 uppercase flex justify-center items-center gap-2 border-t border-border hover:bg-white/5 transition-colors">
-                    {showAll ? 'צמצם' : 'הצג הכל'} {showAll ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}
-                  </button>
-                )}
-            </div>
-          </div>
-        )}
-
-        {currentView === 'seating' && (
-          <SeatingChart 
-            students={Object.values(db)} 
-            onUpdateStudent={(s) => saveDb({ ...db, [s.name]: s })}
-            onBatchUpdate={(updates) => {
-              const newDb = { ...db };
-              updates.forEach(s => newDb[s.name] = s);
-              saveDb(newDb);
-            }}
-          />
-        )}
-
-        {currentView === 'store' && (
-          <StoreView 
-            students={Object.values(db)}
-            config={config}
-            onCheckout={handleCheckout}
-            cart={cart}
-            setCart={setCart}
-            selectedStudentId={storeSelectedStudentId}
-            setSelectedStudentId={setStoreSelectedStudentId}
-          />
-        )}
-
-        {currentView === 'admin' && (
-          <div className="space-y-4 pb-8">
-            
-             <div className="flex justify-between items-center pb-2 border-b border-border mb-4">
-                 <h2 className="text-2xl font-black text-accent flex items-center gap-3">
-                     <ShieldCheck size={28}/> ניהול המערכת
-                 </h2>
-                 <button 
-                    onClick={() => setIsReordering(!isReordering)}
-                    className={`text-xs px-3 py-1.5 rounded-full font-bold transition-colors ${isReordering ? 'bg-green-600 text-white shadow-lg' : 'bg-white/5 text-gray-400 border border-white/5'}`}
-                 >
-                     {isReordering ? 'סיום עריכת סדר' : 'שנה סדר'}
-                 </button>
-             </div>
-
-             <div className="space-y-4">
-                 {adminOrder.map((sectionId, index) => {
-                     const sectionDef = ADMIN_SECTIONS.find(s => s.id === sectionId);
-                     if (!sectionDef) return null;
-                     const isCollapsed = adminCollapsed[sectionId];
-                     
-                     // Force expand Import/Export as they are just buttons
-                     const isAlwaysExpanded = sectionId === 'import_files' || sectionId === 'backup_reset' || sectionId === 'theme_settings';
-                     
-                     return (
-                         <div 
-                            key={sectionId}
-                            className={`bg-card rounded-[2rem] border border-border shadow-md overflow-hidden transition-all ${isReordering ? 'opacity-80 scale-[0.98] border-dashed border-accent' : ''}`}
-                         >
-                             {/* Header */}
-                             <div 
-                                className={`p-4 flex items-center justify-between ${!isAlwaysExpanded ? 'cursor-pointer active:bg-white/5' : ''}`}
-                                onClick={() => {
-                                    if (isReordering) return;
-                                    if (!isAlwaysExpanded) toggleAdminSection(sectionId);
-                                }}
-                             >
-                                 <div className="flex items-center gap-3">
-                                     {isReordering && (
-                                         <div className="flex flex-col gap-1 mr-2">
-                                             <button 
-                                                onClick={(e) => { e.stopPropagation(); moveItem(index, 'up'); }} 
-                                                disabled={index === 0} 
-                                                className="text-gray-500 disabled:opacity-20 hover:text-white"
-                                             >
-                                                 <ArrowUp size={14}/>
-                                             </button>
-                                             <button 
-                                                onClick={(e) => { e.stopPropagation(); moveItem(index, 'down'); }} 
-                                                disabled={index === adminOrder.length - 1} 
-                                                className="text-gray-500 disabled:opacity-20 hover:text-white"
-                                             >
-                                                 <ArrowDown size={14}/>
-                                             </button>
-                                         </div>
-                                     )}
-                                     <div className={`p-2 rounded-xl ${sectionDef.bg} ${sectionDef.color}`}>
-                                         <sectionDef.icon size={20} />
-                                     </div>
-                                     <h3 className="font-bold text-sm text-txt uppercase tracking-wide">{sectionDef.label}</h3>
-                                 </div>
-                                 {!isAlwaysExpanded && !isReordering && (
-                                     isCollapsed ? <ChevronDown size={16} className="text-gray-500"/> : <ChevronUp size={16} className="text-gray-500"/>
-                                 )}
-                             </div>
-                             
-                             {/* Content */}
-                             {(!isCollapsed || isAlwaysExpanded) && (
-                                 <div className="p-4 pt-0 animate-in slide-in-from-top-2 fade-in">
-                                     {renderAdminSectionContent(sectionId)}
-                                 </div>
-                             )}
-                         </div>
-                     );
-                 })}
-             </div>
-          </div>
-        )}
-
-        {currentView === 'contacts' && (
-          <div className="space-y-4 pb-6">
-            <h2 className="text-2xl font-black text-accent flex items-center gap-3"><Users size={28}/> ספר טלפונים</h2>
-            {sorted.map(s => (
-              <div key={s.name} className="bg-card p-5 rounded-3xl border border-border flex justify-between items-center shadow-md active:scale-[0.98] transition-transform cursor-pointer" onClick={() => { setSelectedStudent(s); setDetailsFilter(""); }}>
-                <div>
-                  <p className="font-bold text-sm text-txt">{s.name}</p>
-                  <p className="text-[10px] text-gray-500 mt-1">
-                    {s.nameMother ? `אמא: ${s.nameMother}` : 'חסר פרטי אם'} • {s.nameFather ? `אבא: ${s.nameFather}` : 'חסר פרטי אב'}
-                  </p>
-                </div>
-                <div className="p-3 bg-accent/10 rounded-full text-accent shadow-sm">
-                  <Phone size={20} />
-                </div>
+                      ))}
+                    </div>
+                  )}
               </div>
-            ))}
-          </div>
-        )}
+          )}
+
+          {/* Full Height Apps (Seating, Store) - Managing their own scroll within this container */}
+          {currentView === 'seating' && (
+              <div className="absolute inset-0 pt-16 pb-24 px-0 overflow-hidden">
+                  <SeatingChart 
+                      students={Object.values(db)} 
+                      onUpdateStudent={(s) => saveDb({ ...db, [s.name]: s })}
+                      onBatchUpdate={(updates) => {
+                          const newDb = { ...db };
+                          updates.forEach(s => newDb[s.name] = s);
+                          saveDb(newDb);
+                      }}
+                  />
+              </div>
+          )}
+
+          {currentView === 'store' && (
+              <div className="absolute inset-0 pt-16 pb-24 px-0 overflow-hidden">
+                  <StoreView 
+                      students={Object.values(db)}
+                      config={config}
+                      onCheckout={handleCheckout}
+                      cart={cart}
+                      setCart={setCart}
+                      selectedStudentId={storeSelectedStudentId}
+                      setSelectedStudentId={setStoreSelectedStudentId}
+                  />
+              </div>
+          )}
 
       </main>
       
