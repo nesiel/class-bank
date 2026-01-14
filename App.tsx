@@ -384,17 +384,15 @@ function App() {
     }
   };
 
-  // --- Derived State Calculations (Moved Up) ---
+  // --- Derived State Calculations (MOVED UP) ---
   const sorted = (Object.values(db) as Student[]).sort((a, b) => b.total - a.total);
   const filtered = sorted.filter(s => s.name.includes(searchQuery));
   const classTotal = (Object.values(db) as Student[]).reduce((sum, s) => sum + s.total, 0);
 
-  // Calculate all purchases for history view
   const allPurchases = (Object.values(db) as Student[]).flatMap(s => 
     (s.purchases || []).map(p => ({...p, studentName: s.name}))
   ).sort((a, b) => b.timestamp - a.timestamp);
 
-  // Logic for Tefillah Stats (Sorted by Absence Priority, then Score)
   const tefillahStats = (Object.values(db) as Student[])
     .map(s => {
         const prayerLogs = s.logs.filter(l => l.sub && l.sub.includes('תפיל'));
