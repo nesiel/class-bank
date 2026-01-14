@@ -93,8 +93,9 @@ function App() {
     
     if (sCfg) {
         const parsed = JSON.parse(sCfg);
-        // Ensure the hardcoded URL is used if the saved one is missing or empty
-        if (!parsed.googleAppsScriptUrl || parsed.googleAppsScriptUrl.trim() === "") {
+        // FORCE the hardcoded URL from DEFAULT_CONFIG to ensure connectivity
+        // This fixes "Failed to fetch" if the user has an old URL saved in localStorage
+        if (DEFAULT_CONFIG.googleAppsScriptUrl) {
             parsed.googleAppsScriptUrl = DEFAULT_CONFIG.googleAppsScriptUrl;
         }
         setConfig({ ...DEFAULT_CONFIG, ...parsed });
@@ -395,7 +396,12 @@ function App() {
       if (data.db) saveDb(data.db);
       if (data.config) {
           // Keep the URL from local if cloud is empty, otherwise take cloud
-          const mergedConfig = { ...data.config, googleAppsScriptUrl: config.googleAppsScriptUrl };
+          const mergedConfig = { ...data.config };
+          // Force keep hardcoded URL even if cloud has different one, or allow cloud to update it?
+          // Usually we want the cloud to be the source of truth, but the connectivity URL itself is special.
+          if (DEFAULT_CONFIG.googleAppsScriptUrl) {
+              mergedConfig.googleAppsScriptUrl = DEFAULT_CONFIG.googleAppsScriptUrl;
+          }
           saveConfig(mergedConfig);
       }
       
