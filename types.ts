@@ -1,3 +1,4 @@
+
 export interface LogEntry {
   sub: string;
   teach: string;
@@ -21,6 +22,12 @@ export interface Purchase {
   timestamp: number;
 }
 
+export interface Challenge {
+  id: string;
+  title: string;
+  reward: number;
+}
+
 export interface Student {
   name: string;
   total: number;
@@ -28,6 +35,9 @@ export interface Student {
   purchases?: Purchase[]; // Added purchases history
   lastNachatDate?: string;
   
+  // Auth
+  password?: string; // Custom PIN, default is '1234' if undefined
+
   // Contact Details
   studentCell?: string;
   studentEmail?: string; // Added student email explicitly
@@ -66,16 +76,20 @@ export interface StoreItem {
 }
 
 export type ThemeType = 'current' | 'modern' | 'simple';
+export type UserRole = 'teacher' | 'student' | 'guest';
 
 export interface AppConfig {
   slogan: string;
   logo: string;
   teacherCell: string; // Teacher's phone for notifications
+  teacherPin: string; // Login PIN for teacher
   pastWinners: string[];
   actionScores: Record<string, number>;
   storeItems: StoreItem[]; 
+  challenges: Challenge[]; // New: List of active challenges
   rules: string;
   theme: ThemeType;
+  googleAppsScriptUrl?: string; // Sync URL
 }
 
 export const DEFAULT_SCORES: Record<string, number> = {
@@ -107,6 +121,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   slogan: "יישר כוח!",
   logo: "",
   teacherCell: "",
+  teacherPin: "1234",
   pastWinners: [],
   actionScores: DEFAULT_SCORES,
   storeItems: [
@@ -116,11 +131,19 @@ export const DEFAULT_CONFIG: AppConfig = {
     { id: '4', name: 'החלפת מקום ליום', emoji: '🪑', price: 80, stock: 10 },
     { id: '5', name: 'כדור גומי', emoji: '🎾', price: 60, stock: 8 }
   ],
+  challenges: [
+    { id: '1', title: 'שבוע תפילה בזמן', reward: 50 },
+    { id: '2', title: 'שבוע ללא איחורים', reward: 40 },
+    { id: '3', title: 'עזרה לחבר בלימודים', reward: 20 },
+    { id: '4', title: 'סיום מסכת משניות', reward: 100 },
+    { id: '5', title: 'שבוע תפילת מנחה', reward: 30 },
+  ],
   rules: `תקנון הכיתה:
 1. יש להגיע בזמן לשיעורים.
 2. יש להביא ציוד לימודי מלא.
 3. מדברים בכבוד אחד לשני.
 4. שומרים על רכוש בית הספר.
 (ניתן לערוך טקסט זה במסך הניהול)`,
-  theme: 'current'
+  theme: 'current',
+  googleAppsScriptUrl: "https://script.google.com/macros/s/AKfycbxxtGkZcsAFmCUEaegUlFPs7WR5dJ-6m5BXGd-KhCozjWHYBjXGKiFhILO74NwLYDIu/exec"
 };

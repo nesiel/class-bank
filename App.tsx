@@ -1,19 +1,23 @@
+
 import React, { useState, useEffect, useRef } from 'react';
-import { Database, Student, AppConfig, DEFAULT_CONFIG, ThemeType, StoreItem, Purchase } from './types';
+import { Database, Student, AppConfig, DEFAULT_CONFIG, ThemeType, StoreItem, Purchase, UserRole, Challenge } from './types';
 import { parseExcel, fileToBase64 } from './utils';
 import { Podium } from './components/Podium';
 import { StudentDetails } from './components/StudentDetails';
 import { SeatingChart } from './components/SeatingChart';
 import { StoreView } from './components/StoreView';
 import { BatchCommenter } from './components/BatchCommenter';
+import { LoginScreen } from './components/LoginScreen';
 import { GoogleGenAI } from "@google/genai";
 import { 
-  Home, ShieldCheck, ChevronUp, ChevronDown, Settings, Trash2, Trophy, FileSpreadsheet, Coins, Users, Phone, Download, UserPlus, LayoutGrid, Book, X, PlusCircle, ArrowUp, ArrowDown, GripVertical, MessageCircle, Undo, Scroll, Star, AlertCircle, Palette, Store, Image as ImageIcon, ShoppingBag, Plus, Package, Wand2, Loader2, Save, GraduationCap
+  Home, ShieldCheck, ChevronUp, ChevronDown, Settings, Trash2, Trophy, FileSpreadsheet, Coins, Users, Phone, Download, UserPlus, LayoutGrid, Book, X, PlusCircle, ArrowUp, ArrowDown, GripVertical, MessageCircle, Undo, Scroll, Star, AlertCircle, Palette, Store, Image as ImageIcon, ShoppingBag, Plus, Package, Wand2, Loader2, Save, GraduationCap, LogOut, MinusCircle, KeyRound, Lock, Target, Cloud, Upload, RefreshCw
 } from 'lucide-react';
 
 // Define the available admin sections
 const ADMIN_SECTIONS = [
+  { id: 'cloud_sync', label: 'סנכרון לענן (Google Sheets)', icon: Cloud, color: 'text-sky-500', bg: 'bg-sky-500/10' },
   { id: 'import_files', label: 'ייבוא נתונים (אקסל)', icon: FileSpreadsheet, color: 'text-green-500', bg: 'bg-green-500/10' },
+  { id: 'challenges_manage', label: 'ניהול אתגרים', icon: Target, color: 'text-orange-500', bg: 'bg-orange-500/10' },
   { id: 'store_manage', label: 'ניהול חנות ומלאי', icon: Store, color: 'text-accent', bg: 'bg-accent/10' },
   { id: 'score_settings', label: 'הגדרות ניקוד', icon: Settings, color: 'text-blue-400', bg: 'bg-blue-500/10' },
   { id: 'rules_manage', label: 'עריכת תקנון', icon: Book, color: 'text-purple-400', bg: 'bg-purple-500/10' },
@@ -25,6 +29,11 @@ const ADMIN_SECTIONS = [
 function App() {
   const [db, setDb] = useState<Database>({});
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG);
+  
+  // Auth State
+  const [userRole, setUserRole] = useState<UserRole>('guest');
+  const [loggedInStudentName, setLoggedInStudentName] = useState<string | null>(null);
+
   const [currentView, setCurrentView] = useState<'home' | 'admin' | 'contacts' | 'seating' | 'store'>('home');
   const [showAll, setShowAll] = useState(false);
   const [showAllTefillah, setShowAllTefillah] = useState(false);
@@ -35,11 +44,19 @@ function App() {
   const [showRules, setShowRules] = useState(false);
   const [showBatchCommenter, setShowBatchCommenter] = useState(false);
   
+  // Cloud Sync State
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  // Student Password Change State
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [newPasswordInput, setNewPasswordInput] = useState("");
+  
   // Admin Collapsibles State
   const [adminCollapsed, setAdminCollapsed] = useState<Record<string, boolean>>({
     store_manage: true,
     score_settings: true,
     rules_manage: true,
+    challenges_manage: true,
   });
   const [generatingItemId, setGeneratingItemId] = useState<string | null>(null);
 
@@ -52,7 +69,9 @@ function App() {
 
   // Admin View State - Order
   const [adminOrder, setAdminOrder] = useState<string[]>([
-    'import_files', 
+    'cloud_sync',
+    'import_files',
+    'challenges_manage',
     'store_manage', 
     'score_settings', 
     'rules_manage',
@@ -66,13 +85,61 @@ function App() {
   useEffect(() => {
     const sDb = localStorage.getItem('bank_db');
     const sCfg = localStorage.getItem('bank_cfg');
-    if (sDb) setDb(JSON.parse(sDb));
-    if (sCfg) setConfig({ ...DEFAULT_CONFIG, ...JSON.parse(sCfg) });
     
+    // Auto Login Check
+    const autoLogin = localStorage.getItem('bank_auto_login');
+
+    if (sDb) setDb(JSON.parse(sDb));
+    
+    if (sCfg) {
+        const parsed = JSON.parse(sCfg);
+        // Ensure the hardcoded URL is used if the saved one is missing or empty
+        if (!parsed.googleAppsScriptUrl || parsed.googleAppsScriptUrl.trim() === "") {
+            parsed.googleAppsScriptUrl = DEFAULT_CONFIG.googleAppsScriptUrl;
+        }
+        setConfig({ ...DEFAULT_CONFIG, ...parsed });
+    } else {
+        setConfig(DEFAULT_CONFIG);
+    }
+    
+    // If "Remember Me" was active, log in as teacher automatically
+    if (autoLogin === 'teacher') {
+        setUserRole('teacher');
+    }
+
     // Load admin order
     const sOrder = localStorage.getItem('admin_order_v2');
-    if (sOrder) setAdminOrder(JSON.parse(sOrder));
+    if (sOrder) {
+        const parsedOrder = JSON.parse(sOrder);
+        // Ensure new sections are in the order if loaded from old state
+        if (!parsedOrder.includes('challenges_manage')) parsedOrder.splice(1, 0, 'challenges_manage');
+        if (!parsedOrder.includes('cloud_sync')) parsedOrder.unshift('cloud_sync');
+        setAdminOrder(parsedOrder);
+    }
   }, []);
+
+  const handleLogin = (role: UserRole, studentName?: string, remember?: boolean) => {
+    setUserRole(role);
+    if (role === 'student' && studentName) {
+        setLoggedInStudentName(studentName);
+        // Student logic: set theme to simple, view to home
+        setCurrentView('home');
+    }
+    
+    // Handle Remember Me for teacher
+    if (role === 'teacher' && remember) {
+        localStorage.setItem('bank_auto_login', 'teacher');
+    }
+  };
+
+  const handleLogout = () => {
+    setUserRole('guest');
+    setLoggedInStudentName(null);
+    setCurrentView('home');
+    setCart([]);
+    // Clear auto login
+    localStorage.removeItem('bank_auto_login');
+  };
 
   const saveDb = (newDb: Database) => {
     setDb(newDb);
@@ -95,6 +162,20 @@ function App() {
 
   // Theme Logic
   const getThemeVariables = (theme: ThemeType) => {
+    // Force specific themes based on role if needed, but keeping user pref is fine
+    // Student view might want a lighter theme?
+    if (userRole === 'student') {
+       // Return a slightly simpler, blue-ish theme for students
+       return {
+          '--c-bg': '#0f172a',
+          '--c-card': '#1e293b',
+          '--c-text': '#f1f5f9',
+          '--c-accent': '#38bdf8',
+          '--c-accent-fg': '#000000',
+          '--c-border': 'rgba(56, 189, 248, 0.3)',
+       };
+    }
+
     switch (theme) {
       case 'modern':
         return {
@@ -144,12 +225,15 @@ function App() {
                 logs: [...final[name].logs, ...studentData.logs] 
               };
             } else {
+              // Update contact info (Alfon)
               final[name] = { 
                 ...final[name],
                 nameMother: studentData.nameMother || final[name].nameMother,
                 phoneMother: studentData.phoneMother || final[name].phoneMother,
+                emailMother: studentData.emailMother || final[name].emailMother,
                 nameFather: studentData.nameFather || final[name].nameFather,
                 phoneFather: studentData.phoneFather || final[name].phoneFather,
+                emailFather: studentData.emailFather || final[name].emailFather,
                 studentCell: studentData.studentCell || final[name].studentCell,
                 studentEmail: studentData.studentEmail || final[name].studentEmail,
                 homePhone: studentData.homePhone || final[name].homePhone
@@ -160,7 +244,7 @@ function App() {
           }
         });
         saveDb(final);
-        alert(type === 'behavior' ? "הנקודות עודכנו!" : "האלפון עודכן בהצלחה!");
+        alert(type === 'behavior' ? "הנקודות עודכנו!" : "האלפון עודכן בהצלחה! הנתונים נשמרו בזיכרון.");
       } catch (err) { alert("שגיאה בקובץ"); }
       e.target.value = '';
     }
@@ -171,6 +255,22 @@ function App() {
     saveConfig({ ...config, actionScores: newScores });
   };
   
+  // --- Student Password Management ---
+  const handleChangePassword = () => {
+      if (!loggedInStudentName) return;
+      if (newPasswordInput.length < 4) {
+          alert("הסיסמה חייבת להכיל לפחות 4 תווים");
+          return;
+      }
+      
+      const updatedStudent = { ...db[loggedInStudentName], password: newPasswordInput };
+      saveDb({ ...db, [loggedInStudentName]: updatedStudent });
+      
+      alert("הסיסמה שונתה בהצלחה!");
+      setShowChangePassword(false);
+      setNewPasswordInput("");
+  };
+
   // --- Store Management Functions ---
   const handleAddStoreItem = () => {
     const newItem: StoreItem = {
@@ -207,6 +307,109 @@ function App() {
     }
   };
   
+  // --- Challenges Management ---
+  const handleAddChallenge = () => {
+      const newChallenge: Challenge = {
+          id: Date.now().toString(),
+          title: "",
+          reward: 50
+      };
+      // Ensure config.challenges exists
+      const currentChallenges = config.challenges || [];
+      saveConfig({ ...config, challenges: [...currentChallenges, newChallenge] });
+  };
+
+  const handleUpdateChallenge = (id: string, field: keyof Challenge, value: any) => {
+      const updated = (config.challenges || []).map(c => 
+          c.id === id ? { ...c, [field]: value } : c
+      );
+      saveConfig({ ...config, challenges: updated });
+  };
+
+  const handleDeleteChallenge = (id: string) => {
+      if(window.confirm("למחוק אתגר זה?")) {
+          const updated = (config.challenges || []).filter(c => c.id !== id);
+          saveConfig({ ...config, challenges: updated });
+      }
+  };
+
+  // --- Cloud Sync Logic ---
+  const handleCloudSave = async () => {
+    if (!config.googleAppsScriptUrl) {
+      alert("יש להגדיר כתובת סקריפט Google Apps Script");
+      return;
+    }
+    setIsSyncing(true);
+    try {
+      // Create a clean config for saving
+      const dataToSave = {
+        db: db,
+        config: config
+      };
+      
+      // CRITICAL: Google Apps Script Web Apps do not handle OPTIONS preflight requests well.
+      // We must use 'text/plain' as Content-Type to prevent the browser from sending an OPTIONS request.
+      // Google Apps Script can parse this string using JSON.parse(e.postData.contents).
+      const response = await fetch(config.googleAppsScriptUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'text/plain;charset=utf-8', 
+        },
+        body: JSON.stringify(dataToSave)
+      });
+      
+      if (!response.ok) {
+         throw new Error(`Status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      
+      if (result.status === 'success') {
+         alert("הנתונים נשמרו בענן בהצלחה!");
+      } else {
+         alert("השמירה בוצעה, אך התקבל דיווח לא שגרתי מהשרת.");
+      }
+    } catch (e) {
+      console.error(e);
+      alert(`שגיאה בשמירה לענן: ${(e as Error).message}\nודא שהכתובת נכונה (Web App URL) ושהגדרת "Anyone" בהרשאות.`);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleCloudLoad = async () => {
+    if (!config.googleAppsScriptUrl) {
+      alert("יש להגדיר כתובת סקריפט Google Apps Script");
+      return;
+    }
+    if(!window.confirm("פעולה זו תדרוס את הנתונים המקומיים בנתונים מהענן. להמשיך?")) return;
+    
+    setIsSyncing(true);
+    try {
+      const response = await fetch(config.googleAppsScriptUrl);
+      if (!response.ok) {
+        throw new Error(`Status: ${response.status}`);
+      }
+      const data = await response.json();
+      
+      if (data.db) saveDb(data.db);
+      if (data.config) {
+          // Keep the URL from local if cloud is empty, otherwise take cloud
+          const mergedConfig = { ...data.config, googleAppsScriptUrl: config.googleAppsScriptUrl };
+          saveConfig(mergedConfig);
+      }
+      
+      alert("הנתונים נטענו בהצלחה!");
+      window.location.reload(); // Refresh to ensure state consistency
+    } catch (e) {
+      console.error(e);
+      alert(`שגיאה בטעינת הנתונים: ${(e as Error).message}\nודא שהכתובת נכונה (Web App URL) ושהגדרת "Anyone" בהרשאות.`);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // --- AI Gen Asset ---
   const handleGenerateProductAsset = async (item: StoreItem) => {
     setGeneratingItemId(item.id);
     try {
@@ -249,9 +452,10 @@ function App() {
   };
 
   const handleCheckout = () => {
-    if (!storeSelectedStudentId || cart.length === 0) return;
+    const checkoutStudentId = userRole === 'student' ? loggedInStudentName : storeSelectedStudentId;
+    if (!checkoutStudentId || cart.length === 0) return;
     
-    const student = db[storeSelectedStudentId];
+    const student = db[checkoutStudentId];
     if (!student) return;
 
     let totalCost = 0;
@@ -316,6 +520,7 @@ function App() {
   };
 
   const handleRemoveFromPodium = (studentName: string) => {
+    if (userRole === 'student') return; // Security check
     const newDb = { ...db };
     if (newDb[studentName]) {
       newDb[studentName] = { ...newDb[studentName], isHiddenFromPodium: true };
@@ -371,20 +576,7 @@ function App() {
     saveAdminOrder(newOrder);
   };
 
-  const handleTouchStart = () => {
-    longPressTimer.current = setTimeout(() => {
-        setIsReordering(true);
-        if (navigator.vibrate) navigator.vibrate(50);
-    }, 800);
-  };
-
-  const handleTouchEnd = () => {
-    if (longPressTimer.current) {
-        clearTimeout(longPressTimer.current);
-    }
-  };
-
-  // --- Derived State Calculations (MOVED UP) ---
+  // --- Derived State Calculations ---
   const sorted = (Object.values(db) as Student[]).sort((a, b) => b.total - a.total);
   const filtered = sorted.filter(s => s.name.includes(searchQuery));
   const classTotal = (Object.values(db) as Student[]).reduce((sum, s) => sum + s.total, 0);
@@ -435,6 +627,43 @@ function App() {
 
   const renderAdminSectionContent = (id: string) => {
     switch(id) {
+        case 'cloud_sync':
+            return (
+                <div className="space-y-4 pt-2">
+                    <p className="text-xs text-gray-400">
+                        סנכרון הנתונים ל-Google Sheets מאפשר גיבוי בענן ושיתוף בין מכשירים.
+                        הכתובת מוגדרת מראש במערכת.
+                    </p>
+                    <div className="bg-black/20 p-3 rounded-xl border border-border">
+                        <label className="text-[10px] text-gray-400 block mb-1">כתובת ה-Web App של הסקריפט</label>
+                        <input 
+                            type="text"
+                            value={config.googleAppsScriptUrl || ""}
+                            onChange={(e) => saveConfig({...config, googleAppsScriptUrl: e.target.value})}
+                            className="bg-transparent border-b border-accent/30 w-full text-xs text-white outline-none"
+                            placeholder="https://script.google.com/macros/s/..."
+                        />
+                    </div>
+                    <div className="flex gap-3">
+                         <button 
+                            onClick={handleCloudSave}
+                            disabled={isSyncing}
+                            className="flex-1 py-3 bg-sky-600 hover:bg-sky-500 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition disabled:opacity-50"
+                         >
+                            {isSyncing ? <RefreshCw size={14} className="animate-spin"/> : <Upload size={14} />}
+                            שמור לענן
+                         </button>
+                         <button 
+                            onClick={handleCloudLoad}
+                            disabled={isSyncing}
+                            className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition disabled:opacity-50 border border-white/10"
+                         >
+                             {isSyncing ? <RefreshCw size={14} className="animate-spin"/> : <Download size={14} />}
+                            טען מהענן
+                         </button>
+                    </div>
+                </div>
+            );
         case 'import_files':
             return (
                 <div className="grid grid-cols-2 gap-3 pt-2">
@@ -452,6 +681,54 @@ function App() {
                         <GraduationCap className="text-[#d4af37] mb-0" size={24} />
                         <span className="text-xs font-bold text-[#d4af37]">מחולל הערות לתעודה (AI)</span>
                     </button>
+                    <div className="col-span-2 bg-black/20 p-3 rounded-xl border border-border mt-2">
+                        <label className="text-[10px] text-gray-400 block mb-1">קוד כניסה למורה</label>
+                        <input 
+                            type="text"
+                            value={config.teacherPin}
+                            onChange={(e) => saveConfig({...config, teacherPin: e.target.value})}
+                            className="bg-transparent border-b border-accent/30 w-full text-sm font-bold text-accent outline-none text-center"
+                            placeholder="1234"
+                        />
+                    </div>
+                </div>
+            );
+        case 'challenges_manage':
+            return (
+                <div className="space-y-4 pt-2">
+                    <div className="flex justify-between items-center border-b border-border pb-2">
+                        <span className="text-xs text-gray-400">אתגרים פעילים: {(config.challenges || []).length}</span>
+                        <button onClick={handleAddChallenge} className="text-xs bg-orange-500 text-white px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 hover:brightness-110">
+                            <Plus size={14}/> הוסף אתגר
+                        </button>
+                    </div>
+                    <div className="space-y-3">
+                        {(config.challenges || []).length === 0 && <p className="text-gray-500 text-xs text-center py-2">אין אתגרים מוגדרים</p>}
+                        {(config.challenges || []).map(challenge => (
+                            <div key={challenge.id} className="flex gap-2 bg-black/20 p-2 rounded-xl border border-white/5 items-center">
+                                <Target size={20} className="text-orange-500 shrink-0" />
+                                <div className="flex-1 space-y-1">
+                                    <input 
+                                        type="text" 
+                                        className="w-full bg-transparent border-b border-white/10 text-sm font-bold text-txt outline-none focus:border-orange-500"
+                                        placeholder="שם האתגר"
+                                        value={challenge.title}
+                                        onChange={(e) => handleUpdateChallenge(challenge.id, 'title', e.target.value)}
+                                    />
+                                </div>
+                                <div className="flex items-center gap-1 bg-black/30 px-2 py-1 rounded">
+                                    <span className="text-[10px] text-gray-500">ניקוד:</span>
+                                    <input 
+                                        type="number" 
+                                        className="w-10 bg-transparent text-xs text-orange-400 font-bold outline-none text-center"
+                                        value={challenge.reward}
+                                        onChange={(e) => handleUpdateChallenge(challenge.id, 'reward', parseInt(e.target.value) || 0)}
+                                    />
+                                </div>
+                                <button onClick={() => handleDeleteChallenge(challenge.id)} className="text-red-500/50 hover:text-red-500 p-2"><Trash2 size={16}/></button>
+                            </div>
+                        ))}
+                    </div>
                 </div>
             );
         case 'store_manage':
@@ -621,6 +898,17 @@ function App() {
     }
   };
 
+  if (userRole === 'guest') {
+    return (
+        <LoginScreen 
+            students={Object.values(db)}
+            teacherPin={config.teacherPin}
+            onLogin={handleLogin}
+            logo={config.logo}
+        />
+    );
+  }
+
   return (
     <div 
       className="flex flex-col h-screen bg-primary text-txt overflow-hidden font-sans transition-colors duration-300"
@@ -641,284 +929,402 @@ function App() {
           </div>
         </div>
         <div className="flex gap-2">
+          {userRole === 'teacher' && (
+            <button 
+                onClick={() => setCurrentView('contacts')} 
+                className="w-9 h-9 flex items-center justify-center bg-card/50 rounded-full text-accent border border-white/5 active:bg-white/10 active:scale-95 transition-all shadow-sm"
+            >
+                <Users size={18} />
+            </button>
+          )}
           <button 
-             onClick={() => setCurrentView('contacts')} 
-             className="w-9 h-9 flex items-center justify-center bg-card/50 rounded-full text-accent border border-white/5 active:bg-white/10 active:scale-95 transition-all shadow-sm"
+             onClick={handleLogout} 
+             className="w-9 h-9 flex items-center justify-center bg-red-500/10 rounded-full text-red-400 border border-red-500/20 active:bg-red-500/20 active:scale-95 transition-all shadow-sm"
           >
-            <Users size={18} />
+            <LogOut size={16} />
           </button>
         </div>
       </header>
 
       <main className="flex-1 relative overflow-hidden bg-primary">
           
-          {/* Scrollable Document Views (Home, Admin, Contacts) */}
-          {(currentView === 'home' || currentView === 'admin' || currentView === 'contacts') && (
-              <div className="absolute inset-0 overflow-y-auto pt-20 pb-40 px-4 scroll-smooth no-scrollbar custom-scroll-container">
-                  {currentView === 'home' && (
-                    <div className="space-y-4 flex flex-col min-h-full">
-                      <div className="flex-1 flex flex-col justify-center min-h-[30vh]">
-                        <Podium 
-                          students={sorted.filter(s => !s.isHiddenFromPodium)} 
-                          onRemoveStudent={handleRemoveFromPodium}
-                        />
-                      </div>
-                      
-                      <div className="bg-gradient-to-r from-accent/10 to-card border border-accent/20 p-5 rounded-3xl flex justify-between items-center shadow-lg active:scale-[0.99] transition-transform">
-                          <div className="flex items-center gap-4">
-                              <div className="bg-accent p-2.5 rounded-2xl text-accent-fg shadow-lg shadow-accent/20">
-                                  <Coins size={22} />
+          {/* ======================= */}
+          {/*     STUDENT VIEW        */}
+          {/* ======================= */}
+          {userRole === 'student' && loggedInStudentName && db[loggedInStudentName] ? (
+              <div className="absolute inset-0 overflow-y-auto pt-20 pb-24 px-4 scroll-smooth no-scrollbar custom-scroll-container">
+                  {currentView === 'store' ? (
+                       <StoreView 
+                       students={Object.values(db)}
+                       config={config}
+                       onCheckout={handleCheckout}
+                       cart={cart}
+                       setCart={setCart}
+                       selectedStudentId={loggedInStudentName}
+                       setSelectedStudentId={() => {}} // No-op for students, locked to themselves
+                   />
+                  ) : (
+                      // Student Dashboard (Reusing StudentDetails Logic essentially)
+                      <div className="space-y-6 pb-8">
+                          {/* Welcome Header */}
+                          <div className="bg-gradient-to-br from-blue-900/50 to-blue-600/20 border border-blue-500/30 p-6 rounded-[2rem] shadow-xl relative overflow-hidden">
+                              <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-2xl -mr-10 -mt-10"></div>
+                              <div className="relative z-10 flex justify-between items-start">
+                                  <div>
+                                      <h2 className="text-2xl font-black text-white mb-1">היי {loggedInStudentName.split(' ')[0]}! 👋</h2>
+                                      <p className="text-blue-200 text-xs mb-4">הנה המצב הנוכחי שלך בבנק הכיתתי</p>
+                                  </div>
+                                  <button 
+                                    onClick={() => setShowChangePassword(true)}
+                                    className="bg-black/20 hover:bg-black/40 p-2 rounded-xl text-white transition-colors"
+                                    title="החלף סיסמה"
+                                  >
+                                      <Lock size={18} />
+                                  </button>
                               </div>
-                              <div>
-                                  <span className="text-[10px] font-bold text-accent/70 uppercase tracking-widest block mb-0.5">קופה כיתתית</span>
-                                  <span className="font-bold text-txt text-sm">סך הכל נקודות</span>
+                              
+                              <div className="flex justify-between items-end relative z-10">
+                                  <div>
+                                      <span className="text-[10px] text-gray-400 block mb-1">היתרה שלך</span>
+                                      <span className="text-4xl font-black text-blue-400 tracking-tight">{db[loggedInStudentName].total}₪</span>
+                                  </div>
+                                  <div className="bg-blue-500/10 p-3 rounded-full text-blue-400 border border-blue-500/20">
+                                      <Trophy size={24} />
+                                  </div>
                               </div>
                           </div>
-                          <span className="text-3xl font-black text-accent drop-shadow-sm">{classTotal}₪</span>
-                      </div>
 
-                      {/* Tefillah Corner */}
-                      <div className="bg-card border border-accent/30 rounded-3xl p-5 shadow-lg space-y-3 relative overflow-hidden transition-all">
-                          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-accent to-transparent opacity-50"></div>
-                          
-                          <div className="flex justify-between items-start">
-                              <h3 className="font-bold text-accent flex items-center gap-2">
-                                  <Scroll size={18} /> פינת התפילה
-                              </h3>
-                              <span className="text-[10px] text-gray-400 bg-black/10 px-2 py-1 rounded-full border border-white/5">מצטייני התפילה</span>
+                          {/* Active Challenges Display for Student */}
+                          {(config.challenges || []).length > 0 && (
+                              <div className="space-y-2">
+                                  <h3 className="text-sm font-bold text-gray-400 pr-2 flex items-center gap-2">
+                                      <Target size={16} className="text-orange-500"/> אתגרים פעילים
+                                  </h3>
+                                  <div className="flex gap-3 overflow-x-auto pb-2 px-1 no-scrollbar">
+                                      {config.challenges.map(challenge => (
+                                          <div key={challenge.id} className="min-w-[140px] bg-gradient-to-br from-orange-500/20 to-red-500/10 border border-orange-500/30 p-3 rounded-2xl flex flex-col justify-between items-start shadow-sm">
+                                              <span className="text-xs font-bold text-white line-clamp-2 h-8">{challenge.title}</span>
+                                              <span className="text-lg font-black text-orange-400">+{challenge.reward}</span>
+                                          </div>
+                                      ))}
+                                  </div>
+                              </div>
+                          )}
+
+                          {/* Quick Actions */}
+                          <div className="grid grid-cols-2 gap-3">
+                              <button onClick={() => setCurrentView('store')} className="p-4 bg-accent/10 border border-accent/20 rounded-2xl flex flex-col items-center justify-center gap-2 active:scale-95 transition">
+                                  <Store size={24} className="text-accent" />
+                                  <span className="text-xs font-bold text-accent">לחנות ההפתעות</span>
+                              </button>
+                              <div className="p-4 bg-white/5 border border-white/10 rounded-2xl flex flex-col items-center justify-center gap-2">
+                                  <Star size={24} className="text-yellow-500" />
+                                  <span className="text-xs font-bold text-gray-300">פעולות אחרונות</span>
+                              </div>
                           </div>
 
-                          <p className="text-xs text-txt/70 italic leading-relaxed border-r-2 border-accent/20 pr-3">
-                              "יְהִי רָצוֹן... שֶׁתַּשְׁרֶה שְׁכִינָה בְּמַעֲשֵׂה יָדֵינוּ, וְתַצְלִיחֵנוּ בְּלִמּוּדֵנוּ..."
-                          </p>
-
-                          {/* Champions Display */}
-                          <div className="flex flex-wrap justify-center gap-2 mt-2">
-                              {tefillahChampions.map((s, idx) => (
-                                  <div key={idx} className="bg-black/10 p-2 rounded-2xl flex flex-col items-center text-center border border-border active:scale-95 transition-transform w-[30%] min-w-[90px]" 
-                                      onClick={() => { setSelectedStudent(s); setDetailsFilter('תפיל'); }}>
-                                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold mb-1 shadow-md ${idx === 0 || (s.tefillahScore === tefillahChampions[0].tefillahScore && s.tefillahAbsences === tefillahChampions[0].tefillahAbsences) ? 'bg-yellow-500 text-black' : 'bg-white/10 text-gray-500'}`}>
-                                      {idx + 1}
-                                  </div>
-                                  <span className="text-xs font-bold truncate w-full text-txt">{s.name}</span>
-                                  <span className="text-[10px] text-accent font-black">{s.tefillahScore}₪</span>
-                                  <div className="flex items-center gap-2 mt-1 justify-center w-full">
-                                      {s.goodWordsTefillah > 0 && (
-                                          <span className="text-[8px] text-green-500 flex items-center gap-0.5"><Star size={8} fill="currentColor"/> {s.goodWordsTefillah}</span>
-                                      )}
-                                      {s.tefillahAbsences > 0 && (
-                                          <span className="text-[8px] text-red-500 flex items-center gap-0.5"><AlertCircle size={8} /> {s.tefillahAbsences}</span>
-                                      )}
-                                  </div>
-                                  </div>
-                              ))}
-                              {tefillahChampions.length === 0 && (
-                                  <div className="w-full text-center text-[10px] text-gray-500 py-2">אין נתוני תפילה (טענו מחדש אקסל אם חסר)</div>
+                          {/* Log History (Simplified) */}
+                          <div className="space-y-3">
+                              <h3 className="text-sm font-bold text-gray-400 pr-2">היסטוריית פעולות</h3>
+                              {db[loggedInStudentName].logs.length === 0 ? (
+                                  <div className="text-center py-8 text-gray-500 text-xs">עדיין אין נתונים להצגה</div>
+                              ) : (
+                                  db[loggedInStudentName].logs.slice().reverse().slice(0, 10).map((log, idx) => (
+                                    <div key={idx} className="bg-card p-4 rounded-2xl border border-border flex justify-between items-center shadow-sm">
+                                        <div className="flex items-center gap-3">
+                                            <div className={`p-2 rounded-full ${log.s > 0 ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
+                                                {log.s > 0 ? <Plus size={14}/> : <MinusCircle size={14}/>}
+                                            </div>
+                                            <div>
+                                                <p className="font-bold text-sm text-txt">{log.k}</p>
+                                                <p className="text-[10px] text-gray-500">{log.d} • {log.sub}</p>
+                                            </div>
+                                        </div>
+                                        <span className={`font-black ${log.s > 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                            {log.s > 0 ? '+' : ''}{log.s}
+                                        </span>
+                                    </div>
+                                  ))
                               )}
                           </div>
-
-                          {/* Full List Button */}
-                          <button onClick={() => setShowAllTefillah(!showAllTefillah)} className="w-full mt-2 py-3 text-[10px] font-bold text-accent/50 uppercase flex justify-center items-center gap-2 border-t border-border bg-black/5 rounded-xl hover:bg-black/10 transition-colors">
-                              {showAllTefillah ? 'צמצם רשימת תפילה' : 'הצג את כל הכיתה'} {showAllTefillah ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}
-                          </button>
-
-                          {/* Expanded List */}
-                          {showAllTefillah && (
-                              <div className="mt-2 divide-y divide-border bg-black/10 rounded-2xl max-h-60 overflow-y-auto custom-scrollbar">
-                                  {tefillahStats.map((s, i) => (
-                                      <div key={s.name} 
-                                          onClick={() => { setSelectedStudent(s); setDetailsFilter('תפיל'); }} 
-                                          className="p-3 flex justify-between items-center active:bg-white/5 cursor-pointer"
-                                      >
-                                          <div className="flex items-center gap-3">
-                                              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold bg-white/5 text-gray-500`}>{i + 1}</span>
-                                              <div className="flex flex-col">
-                                                  <span className="text-xs font-bold text-txt">{s.name}</span>
-                                                  <span className="text-[9px] text-gray-500 flex gap-2">
-                                                      {s.tefillahAbsences > 0 ? <span className="text-red-500">חסר: {s.tefillahAbsences}</span> : <span className="text-green-500">נוכחות מלאה</span>}
-                                                  </span>
-                                              </div>
-                                          </div>
-                                          <span className={`text-xs font-black ${s.tefillahScore > 0 ? 'text-green-500' : s.tefillahScore < 0 ? 'text-red-500' : 'text-gray-500'}`}>
-                                              {s.tefillahScore}₪
-                                          </span>
-                                      </div>
-                                  ))}
-                              </div>
-                          )}
                       </div>
-
-                      <button onClick={() => setShowRules(true)} className="w-full bg-card border border-accent/30 rounded-3xl p-4 flex items-center justify-between active:scale-95 transition-transform shadow-md">
-                          <div className="flex items-center gap-3">
-                              <div className="bg-accent/10 p-2.5 rounded-full text-accent">
-                                  <Book size={20} />
-                              </div>
-                              <span className="font-bold text-sm text-txt">תקנון הכיתה</span>
-                          </div>
-                          <ChevronDown size={16} className="text-gray-500"/>
-                      </button>
-
-                      <div className="bg-card border border-accent/30 rounded-[2rem] overflow-hidden shadow-2xl mb-6">
-                          <div className="p-5 border-b border-border flex justify-between items-center bg-black/5">
-                              <h3 className="font-bold text-accent flex items-center gap-2"><Trophy size={18} /> טבלת הניקוד</h3>
-                              <input type="text" placeholder="חפש תלמיד..." className="bg-black/10 border border-border rounded-full py-1.5 px-4 text-xs w-32 outline-none text-txt placeholder-gray-500 focus:border-accent transition-colors" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
-                          </div>
-                          <div className="divide-y divide-border">
-                              {(searchQuery || showAll ? filtered : filtered.slice(0, 5)).map((s, i) => (
-                                  <div key={s.name} onClick={() => { setSelectedStudent(s); setDetailsFilter(""); }} className="p-4 flex justify-between items-center active:bg-white/5 cursor-pointer transition-colors">
-                                      <div className="flex items-center gap-4">
-                                          <span className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shadow-sm ${i < 3 ? 'bg-accent text-accent-fg' : 'bg-white/10 text-gray-500'}`}>{sorted.indexOf(s) + 1}</span>
-                                          <span className="font-bold text-sm text-txt">{s.name}</span>
-                                          {isEligibleForNachat(s) && (
-                                            <button 
-                                              onClick={(e) => handleSendNachat(e, s)}
-                                              className="p-1.5 bg-green-500/10 text-green-500 rounded-full hover:bg-green-500 hover:text-white transition-colors"
-                                              title="שלח הודעת נחת על תפקוד טוב"
-                                            >
-                                              <MessageCircle size={14} />
-                                            </button>
-                                          )}
-                                      </div>
-                                      <span className="font-black text-accent text-lg">{s.total}₪</span>
-                                  </div>
-                              ))}
-                          </div>
-                          {!searchQuery && filtered.length > 5 && (
-                            <button onClick={() => setShowAll(!showAll)} className="w-full py-4 text-[10px] font-bold text-accent/50 uppercase flex justify-center items-center gap-2 border-t border-border hover:bg-white/5 transition-colors">
-                              {showAll ? 'צמצם' : 'הצג הכל'} {showAll ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}
-                            </button>
-                          )}
-                      </div>
-                    </div>
                   )}
-
-                  {currentView === 'admin' && (
-                    <div className="space-y-4 pb-8">
-                      
-                      <div className="flex justify-between items-center pb-2 border-b border-border mb-4">
-                          <h2 className="text-2xl font-black text-accent flex items-center gap-3">
-                              <ShieldCheck size={28}/> ניהול המערכת
-                          </h2>
-                          <button 
-                              onClick={() => setIsReordering(!isReordering)}
-                              className={`text-xs px-3 py-1.5 rounded-full font-bold transition-colors ${isReordering ? 'bg-green-600 text-white shadow-lg' : 'bg-white/5 text-gray-400 border border-white/5'}`}
-                          >
-                              {isReordering ? 'סיום עריכת סדר' : 'שנה סדר'}
-                          </button>
-                      </div>
-
-                      <div className="space-y-4">
-                          {adminOrder.map((sectionId, index) => {
-                              const sectionDef = ADMIN_SECTIONS.find(s => s.id === sectionId);
-                              if (!sectionDef) return null;
-                              const isCollapsed = adminCollapsed[sectionId];
-                              
-                              // Force expand Import/Export as they are just buttons
-                              const isAlwaysExpanded = sectionId === 'import_files' || sectionId === 'backup_reset' || sectionId === 'theme_settings';
-                              
-                              return (
-                                  <div 
-                                      key={sectionId}
-                                      className={`bg-card rounded-[2rem] border border-border shadow-md overflow-hidden transition-all ${isReordering ? 'opacity-80 scale-[0.98] border-dashed border-accent' : ''}`}
-                                  >
-                                      {/* Header */}
-                                      <div 
-                                          className={`p-4 flex items-center justify-between ${!isAlwaysExpanded ? 'cursor-pointer active:bg-white/5' : ''}`}
-                                          onClick={() => {
-                                              if (isReordering) return;
-                                              if (!isAlwaysExpanded) toggleAdminSection(sectionId);
-                                          }}
-                                      >
-                                          <div className="flex items-center gap-3">
-                                              {isReordering && (
-                                                  <div className="flex flex-col gap-1 mr-2">
-                                                      <button 
-                                                          onClick={(e) => { e.stopPropagation(); moveItem(index, 'up'); }} 
-                                                          disabled={index === 0} 
-                                                          className="text-gray-500 disabled:opacity-20 hover:text-white"
-                                                      >
-                                                          <ArrowUp size={14}/>
-                                                      </button>
-                                                      <button 
-                                                          onClick={(e) => { e.stopPropagation(); moveItem(index, 'down'); }} 
-                                                          disabled={index === adminOrder.length - 1} 
-                                                          className="text-gray-500 disabled:opacity-20 hover:text-white"
-                                                      >
-                                                          <ArrowDown size={14}/>
-                                                      </button>
-                                                  </div>
-                                              )}
-                                              <div className={`p-2 rounded-xl ${sectionDef.bg} ${sectionDef.color}`}>
-                                                  <sectionDef.icon size={20} />
-                                              </div>
-                                              <h3 className="font-bold text-sm text-txt uppercase tracking-wide">{sectionDef.label}</h3>
-                                          </div>
-                                          {!isAlwaysExpanded && !isReordering && (
-                                              isCollapsed ? <ChevronDown size={16} className="text-gray-500"/> : <ChevronUp size={16} className="text-gray-500"/>
-                                          )}
-                                      </div>
-                                      
-                                      {/* Content */}
-                                      {(!isCollapsed || isAlwaysExpanded) && (
-                                          <div className="p-4 pt-0 animate-in slide-in-from-top-2 fade-in">
-                                              {renderAdminSectionContent(sectionId)}
-                                          </div>
-                                      )}
-                                  </div>
-                              );
-                          })}
-                      </div>
-                    </div>
-                  )}
-
-                  {currentView === 'contacts' && (
-                    <div className="space-y-4 pb-6">
-                      <h2 className="text-2xl font-black text-accent flex items-center gap-3"><Users size={28}/> ספר טלפונים</h2>
-                      {sorted.map(s => (
-                        <div key={s.name} className="bg-card p-5 rounded-3xl border border-border flex justify-between items-center shadow-md active:scale-[0.98] transition-transform cursor-pointer" onClick={() => { setSelectedStudent(s); setDetailsFilter(""); }}>
-                          <div>
-                            <p className="font-bold text-sm text-txt">{s.name}</p>
-                            <p className="text-[10px] text-gray-500 mt-1">
-                              {s.nameMother ? `אמא: ${s.nameMother}` : 'חסר פרטי אם'} • {s.nameFather ? `אבא: ${s.nameFather}` : 'חסר פרטי אב'}
-                            </p>
-                          </div>
-                          <div className="p-3 bg-accent/10 rounded-full text-accent shadow-sm">
-                            <Phone size={20} />
-                          </div>
+              </div>
+          ) : (
+            /* ======================= */
+            /*     TEACHER VIEW        */
+            /* ======================= */
+            <>
+            {/* Scrollable Document Views (Home, Admin, Contacts) */}
+            {(currentView === 'home' || currentView === 'admin' || currentView === 'contacts') && (
+                <div className="absolute inset-0 overflow-y-auto pt-20 pb-40 px-4 scroll-smooth no-scrollbar custom-scroll-container">
+                    {currentView === 'home' && (
+                        <div className="space-y-4 flex flex-col min-h-full">
+                        
+                        <div className="flex-1 flex flex-col justify-center min-h-[30vh]">
+                            <Podium 
+                            students={sorted.filter(s => !s.isHiddenFromPodium)} 
+                            onRemoveStudent={handleRemoveFromPodium}
+                            />
                         </div>
-                      ))}
-                    </div>
-                  )}
-              </div>
-          )}
+                        
+                        <div className="bg-gradient-to-r from-accent/10 to-card border border-accent/20 p-5 rounded-3xl flex justify-between items-center shadow-lg active:scale-[0.99] transition-transform">
+                            <div className="flex items-center gap-4">
+                                <div className="bg-accent p-2.5 rounded-2xl text-accent-fg shadow-lg shadow-accent/20">
+                                    <Coins size={22} />
+                                </div>
+                                <div>
+                                    <span className="text-[10px] font-bold text-accent/70 uppercase tracking-widest block mb-0.5">קופה כיתתית</span>
+                                    <span className="font-bold text-txt text-sm">סך הכל נקודות</span>
+                                </div>
+                            </div>
+                            <span className="text-3xl font-black text-accent drop-shadow-sm">{classTotal}₪</span>
+                        </div>
 
-          {/* Full Height Apps (Seating, Store) - Managing their own scroll within this container */}
-          {currentView === 'seating' && (
-              <div className="absolute inset-0 pt-16 pb-24 px-0 overflow-hidden">
-                  <SeatingChart 
-                      students={Object.values(db)} 
-                      onUpdateStudent={(s) => saveDb({ ...db, [s.name]: s })}
-                      onBatchUpdate={(updates) => {
-                          const newDb = { ...db };
-                          updates.forEach(s => newDb[s.name] = s);
-                          saveDb(newDb);
-                      }}
-                  />
-              </div>
-          )}
+                        {/* Tefillah Corner */}
+                        <div className="bg-card border border-accent/30 rounded-3xl p-5 shadow-lg space-y-3 relative overflow-hidden transition-all">
+                            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-accent to-transparent opacity-50"></div>
+                            
+                            <div className="flex justify-between items-start">
+                                <h3 className="font-bold text-accent flex items-center gap-2">
+                                    <Scroll size={18} /> פינת התפילה
+                                </h3>
+                                <span className="text-[10px] text-gray-400 bg-black/10 px-2 py-1 rounded-full border border-white/5">מצטייני התפילה</span>
+                            </div>
 
-          {currentView === 'store' && (
-              <div className="absolute inset-0 pt-16 pb-24 px-0 overflow-hidden">
-                  <StoreView 
-                      students={Object.values(db)}
-                      config={config}
-                      onCheckout={handleCheckout}
-                      cart={cart}
-                      setCart={setCart}
-                      selectedStudentId={storeSelectedStudentId}
-                      setSelectedStudentId={setStoreSelectedStudentId}
-                  />
-              </div>
+                            <p className="text-xs text-txt/70 italic leading-relaxed border-r-2 border-accent/20 pr-3">
+                                "יְהִי רָצוֹן... שֶׁתַּשְׁרֶה שְׁכִינָה בְּמַעֲשֵׂה יָדֵינוּ, וְתַצְלִיחֵנוּ בְּלִמּוּדֵנוּ..."
+                            </p>
+
+                            {/* Champions Display */}
+                            <div className="flex flex-wrap justify-center gap-2 mt-2">
+                                {tefillahChampions.map((s, idx) => (
+                                    <div key={idx} className="bg-black/10 p-2 rounded-2xl flex flex-col items-center text-center border border-border active:scale-95 transition-transform w-[30%] min-w-[90px]" 
+                                        onClick={() => { setSelectedStudent(s); setDetailsFilter('תפיל'); }}>
+                                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold mb-1 shadow-md ${idx === 0 || (s.tefillahScore === tefillahChampions[0].tefillahScore && s.tefillahAbsences === tefillahChampions[0].tefillahAbsences) ? 'bg-yellow-500 text-black' : 'bg-white/10 text-gray-500'}`}>
+                                        {idx + 1}
+                                    </div>
+                                    <span className="text-xs font-bold truncate w-full text-txt">{s.name}</span>
+                                    <span className="text-[10px] text-accent font-black">{s.tefillahScore}₪</span>
+                                    <div className="flex items-center gap-2 mt-1 justify-center w-full">
+                                        {s.goodWordsTefillah > 0 && (
+                                            <span className="text-[8px] text-green-500 flex items-center gap-0.5"><Star size={8} fill="currentColor"/> {s.goodWordsTefillah}</span>
+                                        )}
+                                        {s.tefillahAbsences > 0 && (
+                                            <span className="text-[8px] text-red-500 flex items-center gap-0.5"><AlertCircle size={8} /> {s.tefillahAbsences}</span>
+                                        )}
+                                    </div>
+                                    </div>
+                                ))}
+                                {tefillahChampions.length === 0 && (
+                                    <div className="w-full text-center text-[10px] text-gray-500 py-2">אין נתוני תפילה (טענו מחדש אקסל אם חסר)</div>
+                                )}
+                            </div>
+
+                            {/* Full List Button */}
+                            <button onClick={() => setShowAllTefillah(!showAllTefillah)} className="w-full mt-2 py-3 text-[10px] font-bold text-accent/50 uppercase flex justify-center items-center gap-2 border-t border-border bg-black/5 rounded-xl hover:bg-black/10 transition-colors">
+                                {showAllTefillah ? 'צמצם רשימת תפילה' : 'הצג את כל הכיתה'} {showAllTefillah ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}
+                            </button>
+
+                            {/* Expanded List */}
+                            {showAllTefillah && (
+                                <div className="mt-2 divide-y divide-border bg-black/10 rounded-2xl max-h-60 overflow-y-auto custom-scrollbar">
+                                    {tefillahStats.map((s, i) => (
+                                        <div key={s.name} 
+                                            onClick={() => { setSelectedStudent(s); setDetailsFilter('תפיל'); }} 
+                                            className="p-3 flex justify-between items-center active:bg-white/5 cursor-pointer"
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold bg-white/5 text-gray-500`}>{i + 1}</span>
+                                                <div className="flex flex-col">
+                                                    <span className="text-xs font-bold text-txt">{s.name}</span>
+                                                    <span className="text-[9px] text-gray-500 flex gap-2">
+                                                        {s.tefillahAbsences > 0 ? <span className="text-red-500">חסר: {s.tefillahAbsences}</span> : <span className="text-green-500">נוכחות מלאה</span>}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <span className={`text-xs font-black ${s.tefillahScore > 0 ? 'text-green-500' : s.tefillahScore < 0 ? 'text-red-500' : 'text-gray-500'}`}>
+                                                {s.tefillahScore}₪
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        <button onClick={() => setShowRules(true)} className="w-full bg-card border border-accent/30 rounded-3xl p-4 flex items-center justify-between active:scale-95 transition-transform shadow-md">
+                            <div className="flex items-center gap-3">
+                                <div className="bg-accent/10 p-2.5 rounded-full text-accent">
+                                    <Book size={20} />
+                                </div>
+                                <span className="font-bold text-sm text-txt">תקנון הכיתה</span>
+                            </div>
+                            <ChevronDown size={16} className="text-gray-500"/>
+                        </button>
+
+                        <div className="bg-card border border-accent/30 rounded-[2rem] overflow-hidden shadow-2xl mb-6">
+                            <div className="p-5 border-b border-border flex justify-between items-center bg-black/5">
+                                <h3 className="font-bold text-accent flex items-center gap-2"><Trophy size={18} /> טבלת הניקוד</h3>
+                                <input type="text" placeholder="חפש תלמיד..." className="bg-black/10 border border-border rounded-full py-1.5 px-4 text-xs w-32 outline-none text-txt placeholder-gray-500 focus:border-accent transition-colors" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+                            </div>
+                            <div className="divide-y divide-border">
+                                {(searchQuery || showAll ? filtered : filtered.slice(0, 5)).map((s, i) => (
+                                    <div key={s.name} onClick={() => { setSelectedStudent(s); setDetailsFilter(""); }} className="p-4 flex justify-between items-center active:bg-white/5 cursor-pointer transition-colors">
+                                        <div className="flex items-center gap-4">
+                                            <span className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shadow-sm ${i < 3 ? 'bg-accent text-accent-fg' : 'bg-white/10 text-gray-500'}`}>{sorted.indexOf(s) + 1}</span>
+                                            <span className="font-bold text-sm text-txt">{s.name}</span>
+                                            {isEligibleForNachat(s) && (
+                                                <button 
+                                                onClick={(e) => handleSendNachat(e, s)}
+                                                className="p-1.5 bg-green-500/10 text-green-500 rounded-full hover:bg-green-500 hover:text-white transition-colors"
+                                                title="שלח הודעת נחת על תפקוד טוב"
+                                                >
+                                                <MessageCircle size={14} />
+                                                </button>
+                                            )}
+                                        </div>
+                                        <span className="font-black text-accent text-lg">{s.total}₪</span>
+                                    </div>
+                                ))}
+                            </div>
+                            {!searchQuery && filtered.length > 5 && (
+                                <button onClick={() => setShowAll(!showAll)} className="w-full py-4 text-[10px] font-bold text-accent/50 uppercase flex justify-center items-center gap-2 border-t border-border hover:bg-white/5 transition-colors">
+                                {showAll ? 'צמצם' : 'הצג הכל'} {showAll ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}
+                                </button>
+                            )}
+                        </div>
+                        </div>
+                    )}
+
+                    {currentView === 'admin' && (
+                        <div className="space-y-4 pb-8">
+                        
+                        <div className="flex justify-between items-center pb-2 border-b border-border mb-4">
+                            <h2 className="text-2xl font-black text-accent flex items-center gap-3">
+                                <ShieldCheck size={28}/> ניהול המערכת
+                            </h2>
+                            <button 
+                                onClick={() => setIsReordering(!isReordering)}
+                                className={`text-xs px-3 py-1.5 rounded-full font-bold transition-colors ${isReordering ? 'bg-green-600 text-white shadow-lg' : 'bg-white/5 text-gray-400 border border-white/5'}`}
+                            >
+                                {isReordering ? 'סיום עריכת סדר' : 'שנה סדר'}
+                            </button>
+                        </div>
+
+                        <div className="space-y-4">
+                            {adminOrder.map((sectionId, index) => {
+                                const sectionDef = ADMIN_SECTIONS.find(s => s.id === sectionId);
+                                if (!sectionDef) return null;
+                                const isCollapsed = adminCollapsed[sectionId];
+                                
+                                // Force expand Import/Export as they are just buttons
+                                const isAlwaysExpanded = sectionId === 'import_files' || sectionId === 'backup_reset' || sectionId === 'theme_settings';
+                                
+                                return (
+                                    <div 
+                                        key={sectionId}
+                                        className={`bg-card rounded-[2rem] border border-border shadow-md overflow-hidden transition-all ${isReordering ? 'opacity-80 scale-[0.98] border-dashed border-accent' : ''}`}
+                                    >
+                                        {/* Header */}
+                                        <div 
+                                            className={`p-4 flex items-center justify-between ${!isAlwaysExpanded ? 'cursor-pointer active:bg-white/5' : ''}`}
+                                            onClick={() => {
+                                                if (isReordering) return;
+                                                if (!isAlwaysExpanded) toggleAdminSection(sectionId);
+                                            }}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                {isReordering && (
+                                                    <div className="flex flex-col gap-1 mr-2">
+                                                        <button 
+                                                            onClick={(e) => { e.stopPropagation(); moveItem(index, 'up'); }} 
+                                                            disabled={index === 0} 
+                                                            className="text-gray-500 disabled:opacity-20 hover:text-white"
+                                                        >
+                                                            <ArrowUp size={14}/>
+                                                        </button>
+                                                        <button 
+                                                            onClick={(e) => { e.stopPropagation(); moveItem(index, 'down'); }} 
+                                                            disabled={index === adminOrder.length - 1} 
+                                                            className="text-gray-500 disabled:opacity-20 hover:text-white"
+                                                        >
+                                                            <ArrowDown size={14}/>
+                                                        </button>
+                                                    </div>
+                                                )}
+                                                <div className={`p-2 rounded-xl ${sectionDef.bg} ${sectionDef.color}`}>
+                                                    <sectionDef.icon size={20} />
+                                                </div>
+                                                <h3 className="font-bold text-sm text-txt uppercase tracking-wide">{sectionDef.label}</h3>
+                                            </div>
+                                            {!isAlwaysExpanded && !isReordering && (
+                                                isCollapsed ? <ChevronDown size={16} className="text-gray-500"/> : <ChevronUp size={16} className="text-gray-500"/>
+                                            )}
+                                        </div>
+                                        
+                                        {/* Content */}
+                                        {(!isCollapsed || isAlwaysExpanded) && (
+                                            <div className="p-4 pt-0 animate-in slide-in-from-top-2 fade-in">
+                                                {renderAdminSectionContent(sectionId)}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        </div>
+                    )}
+
+                    {currentView === 'contacts' && (
+                        <div className="space-y-4 pb-6">
+                        <h2 className="text-2xl font-black text-accent flex items-center gap-3"><Users size={28}/> ספר טלפונים</h2>
+                        {sorted.map(s => (
+                            <div key={s.name} className="bg-card p-5 rounded-3xl border border-border flex justify-between items-center shadow-md active:scale-[0.98] transition-transform cursor-pointer" onClick={() => { setSelectedStudent(s); setDetailsFilter(""); }}>
+                            <div>
+                                <p className="font-bold text-sm text-txt">{s.name}</p>
+                                <p className="text-[10px] text-gray-500 mt-1">
+                                {s.nameMother ? `אמא: ${s.nameMother}` : 'חסר פרטי אם'} • {s.nameFather ? `אבא: ${s.nameFather}` : 'חסר פרטי אב'}
+                                </p>
+                            </div>
+                            <div className="p-3 bg-accent/10 rounded-full text-accent shadow-sm">
+                                <Phone size={20} />
+                            </div>
+                            </div>
+                        ))}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Full Height Apps (Seating, Store) - Managing their own scroll within this container */}
+            {currentView === 'seating' && (
+                <div className="absolute inset-0 pt-16 pb-24 px-0 overflow-hidden">
+                    <SeatingChart 
+                        students={Object.values(db)} 
+                        onUpdateStudent={(s) => saveDb({ ...db, [s.name]: s })}
+                        onBatchUpdate={(updates) => {
+                            const newDb = { ...db };
+                            updates.forEach(s => newDb[s.name] = s);
+                            saveDb(newDb);
+                        }}
+                    />
+                </div>
+            )}
+
+            {currentView === 'store' && (
+                <div className="absolute inset-0 pt-16 pb-24 px-0 overflow-hidden">
+                    <StoreView 
+                        students={Object.values(db)}
+                        config={config}
+                        onCheckout={handleCheckout}
+                        cart={cart}
+                        setCart={setCart}
+                        selectedStudentId={storeSelectedStudentId}
+                        setSelectedStudentId={setStoreSelectedStudentId}
+                    />
+                </div>
+            )}
+            </>
           )}
 
       </main>
@@ -941,20 +1347,71 @@ function App() {
         </div>
       )}
 
+      {/* Change Password Modal (Student) */}
+      {showChangePassword && (
+          <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in">
+              <div className="bg-[#1e293b] border border-blue-500/30 w-full max-w-sm p-8 rounded-3xl shadow-2xl relative">
+                  <button 
+                    onClick={() => {setShowChangePassword(false); setNewPasswordInput("");}} 
+                    className="absolute top-4 left-4 text-gray-400 hover:text-white"
+                  >
+                      <X size={20} />
+                  </button>
+                  
+                  <div className="text-center mb-6">
+                      <div className="bg-blue-500/20 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-blue-400">
+                          <KeyRound size={32} />
+                      </div>
+                      <h3 className="text-xl font-bold text-white">החלפת סיסמה אישית</h3>
+                      <p className="text-gray-400 text-xs mt-2">הגדר קוד חדש במקום 1234</p>
+                  </div>
+
+                  <div className="mb-6">
+                      <input 
+                        type="tel" 
+                        maxLength={4}
+                        placeholder="הכנס קוד חדש (4 ספרות)" 
+                        className="w-full bg-black/40 border border-blue-500/30 text-white text-center text-2xl tracking-widest p-4 rounded-xl outline-none focus:border-blue-500 transition-colors"
+                        value={newPasswordInput}
+                        onChange={(e) => {
+                            // Only allow numbers
+                            if (/^\d*$/.test(e.target.value)) {
+                                setNewPasswordInput(e.target.value);
+                            }
+                        }}
+                      />
+                  </div>
+
+                  <button 
+                    onClick={handleChangePassword}
+                    className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-3 rounded-xl shadow-lg active:scale-95 transition-transform"
+                  >
+                      שמור סיסמה חדשה
+                  </button>
+              </div>
+          </div>
+      )}
+
       {/* Floating Bottom Navigation */}
       <nav className="fixed bottom-5 left-4 right-4 bg-card/85 backdrop-blur-xl border border-white/10 p-2 rounded-[2rem] flex justify-between items-center shadow-[0_8px_32px_rgba(0,0,0,0.4)] z-50 max-w-md mx-auto">
         <button onClick={() => setCurrentView('home')} className={`p-3.5 rounded-full transition-all duration-300 ${currentView === 'home' ? 'bg-accent text-accent-fg shadow-lg shadow-accent/20 scale-105' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
           <Home size={22} />
         </button>
-        <button onClick={() => setCurrentView('seating')} className={`p-3.5 rounded-full transition-all duration-300 ${currentView === 'seating' ? 'bg-accent text-accent-fg shadow-lg shadow-accent/20 scale-105' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
-          <LayoutGrid size={22} />
-        </button>
+        {userRole === 'teacher' && (
+            <button onClick={() => setCurrentView('seating')} className={`p-3.5 rounded-full transition-all duration-300 ${currentView === 'seating' ? 'bg-accent text-accent-fg shadow-lg shadow-accent/20 scale-105' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+            <LayoutGrid size={22} />
+            </button>
+        )}
         <button onClick={() => setCurrentView('store')} className={`p-3.5 rounded-full transition-all duration-300 ${currentView === 'store' ? 'bg-accent text-accent-fg shadow-lg shadow-accent/20 scale-105' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
           <ShoppingBag size={22} />
         </button>
-        <button onClick={() => setCurrentView('admin')} className={`p-3.5 rounded-full transition-all duration-300 ${currentView === 'admin' ? 'bg-accent text-accent-fg shadow-lg shadow-accent/20 scale-105' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
-          <ShieldCheck size={22} />
-        </button>
+        
+        {/* Only Admin sees admin tab */}
+        {userRole === 'teacher' && (
+            <button onClick={() => setCurrentView('admin')} className={`p-3.5 rounded-full transition-all duration-300 ${currentView === 'admin' ? 'bg-accent text-accent-fg shadow-lg shadow-accent/20 scale-105' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+            <ShieldCheck size={22} />
+            </button>
+        )}
       </nav>
 
       {selectedStudent && (
@@ -964,6 +1421,7 @@ function App() {
           filterKeyword={detailsFilter}
           onClose={() => setSelectedStudent(null)}
           onDeleteLog={(name, idx) => {
+            if (userRole === 'student') return;
             const s = db[name];
             if (!s) return;
             const newLogs = [...s.logs];
@@ -974,6 +1432,7 @@ function App() {
             if (selectedStudent?.name === name) setSelectedStudent(updatedStudent);
           }}
           onAddLog={(name, log) => {
+            if (userRole === 'student') return;
             const s = db[name];
             if (s) {
                const newTotal = s.total + log.s;
@@ -991,10 +1450,11 @@ function App() {
              }
           }}
           onUpdateStudent={(updatedStudent) => {
+             if (userRole === 'student') return;
              saveDb({ ...db, [updatedStudent.name]: updatedStudent });
              if (selectedStudent?.name === updatedStudent.name) setSelectedStudent(updatedStudent);
           }}
-          isAuthenticated={true}
+          isAuthenticated={userRole === 'teacher'}
         />
       )}
 

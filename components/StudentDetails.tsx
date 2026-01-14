@@ -1,6 +1,7 @@
+
 import React, { useState } from 'react';
-import { Student, AppConfig } from '../types';
-import { X, Trash2, Calendar, MessageCircle, Phone, Heart, Users, GraduationCap, PlusCircle, Check, MinusCircle, Mail, Smartphone, Home, Trophy, Filter } from 'lucide-react';
+import { Student, AppConfig, Challenge } from '../types';
+import { X, Trash2, Calendar, MessageCircle, Phone, Heart, Users, GraduationCap, PlusCircle, Check, MinusCircle, Mail, Smartphone, Home, Trophy, Filter, RotateCcw, KeyRound, Target } from 'lucide-react';
 
 interface StudentDetailsProps {
   student: Student | null;
@@ -16,6 +17,7 @@ interface StudentDetailsProps {
 
 export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config, onClose, onDeleteLog, onAddLog, onMarkNachat, onUpdateStudent, isAuthenticated, filterKeyword }) => {
   const [showAddAction, setShowAddAction] = useState(false);
+  const [showChallengeSelect, setShowChallengeSelect] = useState(false);
   const [isManualInput, setIsManualInput] = useState(false);
   
   // State for adding action
@@ -42,6 +44,27 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
     const message = `שלום ${parentName || 'הורה'} יקר/ה, רציתי לשתף בנחת מהכיתה! ${student.name} מתקדם/ת יפה מאוד וצובר/ת נקודות זכות על התנהגות והשקעה. כל הכבוד! 🌟`;
     window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank');
     onMarkNachat(student.name);
+  };
+
+  const handleResetPassword = () => {
+      if (window.confirm("האם לאפס את סיסמת התלמיד חזרה ל-1234?")) {
+          onUpdateStudent({ ...student, password: undefined });
+          alert("הסיסמה אופסה ל-1234 בהצלחה!");
+      }
+  };
+
+  const handleAwardChallenge = (challenge: Challenge) => {
+      if(window.confirm(`האם לאשר ש${student.name} עמד באתגר "${challenge.title}"?`)) {
+          onAddLog(student.name, {
+              sub: "אתגר כיתתי",
+              teach: "מחנך/ת",
+              k: `עמד באתגר: ${challenge.title}`,
+              c: 1,
+              s: challenge.reward,
+              d: new Date().toLocaleDateString('he-IL')
+          });
+          setShowChallengeSelect(false);
+      }
   };
 
   const handleSubmitAction = () => {
@@ -113,29 +136,66 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
 
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           
-          {/* Restore to Podium Button */}
-          {student.isHiddenFromPodium && !filterKeyword && (
-            <button 
-                onClick={() => {
-                    onUpdateStudent({...student, isHiddenFromPodium: false});
-                    onClose();
-                }}
-                className="w-full py-3 bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded-xl font-bold flex items-center justify-center gap-2 active:scale-95 transition"
-            >
-                <Trophy size={18} /> החזר לפודיום (בטל הסתרה)
-            </button>
+          {/* Admin Tools: Password Reset */}
+          {isAuthenticated && !filterKeyword && (
+              <div className="flex gap-2">
+                  {student.isHiddenFromPodium ? (
+                    <button 
+                        onClick={() => {
+                            onUpdateStudent({...student, isHiddenFromPodium: false});
+                            onClose();
+                        }}
+                        className="flex-1 py-3 bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded-xl font-bold flex items-center justify-center gap-2 active:scale-95 transition text-xs"
+                    >
+                        <Trophy size={16} /> החזר לפודיום
+                    </button>
+                  ) : null}
+                  
+                  <button 
+                    onClick={handleResetPassword}
+                    className="flex-1 py-3 bg-red-600/10 text-red-400 border border-red-500/20 rounded-xl font-bold flex items-center justify-center gap-2 active:scale-95 transition text-xs hover:bg-red-600/20"
+                  >
+                      <RotateCcw size={16} /> אפס סיסמה (1234)
+                  </button>
+              </div>
           )}
 
           {/* Quick Actions / Manual Add - Only show if not filtered */}
           {isAuthenticated && !filterKeyword && (
             <div className="bg-accent/5 p-4 rounded-3xl border border-accent/20">
-               {!showAddAction ? (
-                 <button 
-                    onClick={() => setShowAddAction(true)}
-                    className="w-full py-3 bg-accent text-accent-fg font-bold rounded-xl shadow-lg flex items-center justify-center gap-2 hover:opacity-90 transition active:scale-95"
-                 >
-                    <PlusCircle size={18} /> הוסף פעולה ידנית
-                 </button>
+               {!showAddAction && !showChallengeSelect ? (
+                 <div className="flex gap-2">
+                     <button 
+                        onClick={() => setShowAddAction(true)}
+                        className="flex-[2] py-3 bg-accent text-accent-fg font-bold rounded-xl shadow-lg flex items-center justify-center gap-2 hover:opacity-90 transition active:scale-95"
+                     >
+                        <PlusCircle size={18} /> הוסף פעולה ידנית
+                     </button>
+                     <button 
+                        onClick={() => setShowChallengeSelect(true)}
+                        className="flex-1 py-3 bg-orange-500/20 text-orange-500 border border-orange-500/30 font-bold rounded-xl shadow-lg flex items-center justify-center gap-2 hover:bg-orange-500/30 transition active:scale-95 text-xs"
+                     >
+                        <Target size={18} /> אתגר
+                     </button>
+                 </div>
+               ) : showChallengeSelect ? (
+                   <div className="space-y-3 animate-in slide-in-from-top-2">
+                       <h4 className="text-sm font-bold text-orange-500 mb-2">בחר אתגר שהושלם:</h4>
+                       <div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto pr-1 custom-scrollbar">
+                           {(config.challenges || []).length === 0 && <p className="text-gray-500 text-xs">אין אתגרים פעילים</p>}
+                           {(config.challenges || []).map(c => (
+                               <button 
+                                key={c.id} 
+                                onClick={() => handleAwardChallenge(c)}
+                                className="text-right p-3 bg-black/20 hover:bg-orange-500/10 border border-white/5 hover:border-orange-500/30 rounded-xl flex justify-between items-center group transition"
+                               >
+                                   <span className="text-xs font-bold text-white group-hover:text-orange-400">{c.title}</span>
+                                   <span className="text-xs font-black text-orange-500">+{c.reward}</span>
+                               </button>
+                           ))}
+                       </div>
+                       <button onClick={() => setShowChallengeSelect(false)} className="w-full py-2 bg-white/5 text-gray-400 rounded-xl text-xs font-bold mt-2">ביטול</button>
+                   </div>
                ) : (
                  <div className="space-y-3 animate-in slide-in-from-top-2">
                     <div className="flex gap-2">
