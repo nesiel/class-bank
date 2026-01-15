@@ -1,4 +1,5 @@
 
+
 export interface LogEntry {
   sub: string;
   teach: string;
@@ -145,5 +146,5 @@ export const DEFAULT_CONFIG: AppConfig = {
 4. שומרים על רכוש בית הספר.
 (ניתן לערוך טקסט זה במסך הניהול)`,
   theme: 'current',
-  googleAppsScriptUrl: "https://script.google.com/macros/s/AKfycbyGro7MW0M3r3XK7dXG-DScL802R0OyoRZl_qIRBo-8kbdvEPJwyTeGiXHlpVscSyyVTA/exec"
+  googleAppsScriptUrl: "https://script.google.com/macros/s/AKfycbzAsMNv-RG0Pnx2VM7zDe26Id6zcDuZIZxpYy8ra6Tif1RMYaoYFuom8lMTobTe53d3UA/exec"
 };
