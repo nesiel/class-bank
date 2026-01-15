@@ -10,7 +10,7 @@ import { BatchCommenter } from './components/BatchCommenter';
 import { LoginScreen } from './components/LoginScreen';
 import { GoogleGenAI } from "@google/genai";
 import { 
-  Home, ShieldCheck, ChevronUp, ChevronDown, Settings, Trash2, Trophy, FileSpreadsheet, Coins, Users, Phone, Download, UserPlus, LayoutGrid, Book, X, PlusCircle, ArrowUp, ArrowDown, GripVertical, MessageCircle, Undo, Scroll, Star, AlertCircle, Palette, Store, Image as ImageIcon, ShoppingBag, Plus, Package, Wand2, Loader2, Save, GraduationCap, LogOut, MinusCircle, KeyRound, Lock, Target, Cloud, Upload, RefreshCw
+  Home, ShieldCheck, ChevronUp, ChevronDown, Settings, Trash2, Trophy, FileSpreadsheet, Coins, Users, Phone, Download, UserPlus, LayoutGrid, Book, X, PlusCircle, ArrowUp, ArrowDown, GripVertical, MessageCircle, Undo, Scroll, Star, AlertCircle, Palette, Store, Image as ImageIcon, ShoppingBag, Plus, Package, Wand2, Loader2, Save, GraduationCap, LogOut, MinusCircle, KeyRound, Lock, Target, Cloud, Upload, RefreshCw, CheckSquare, Square
 } from 'lucide-react';
 
 // Define the available admin sections
@@ -26,7 +26,7 @@ const ADMIN_SECTIONS = [
   { id: 'theme_settings', label: 'עיצוב', icon: Palette, color: 'text-pink-400', bg: 'bg-pink-500/10' },
 ];
 
-function App() {
+export default function App() {
   const [db, setDb] = useState<Database>({});
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG);
   
@@ -46,6 +46,7 @@ function App() {
   
   // Cloud Sync State
   const [isSyncing, setIsSyncing] = useState(false);
+  const [includeImagesInSync, setIncludeImagesInSync] = useState(false);
 
   // Student Password Change State
   const [showChangePassword, setShowChangePassword] = useState(false);
@@ -83,39 +84,59 @@ function App() {
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    const sDb = localStorage.getItem('bank_db');
-    const sCfg = localStorage.getItem('bank_cfg');
-    
-    // Auto Login Check
-    const autoLogin = localStorage.getItem('bank_auto_login');
+    try {
+        const sDb = localStorage.getItem('bank_db');
+        const sCfg = localStorage.getItem('bank_cfg');
+        
+        // Auto Login Check
+        const autoLogin = localStorage.getItem('bank_auto_login');
 
-    if (sDb) setDb(JSON.parse(sDb));
-    
-    if (sCfg) {
-        const parsed = JSON.parse(sCfg);
-        // FORCE the hardcoded URL from DEFAULT_CONFIG to ensure connectivity
-        // This fixes "Failed to fetch" if the user has an old URL saved in localStorage
-        if (DEFAULT_CONFIG.googleAppsScriptUrl) {
-            parsed.googleAppsScriptUrl = DEFAULT_CONFIG.googleAppsScriptUrl;
+        if (sDb) {
+            try {
+                setDb(JSON.parse(sDb));
+            } catch (e) {
+                console.error("Error parsing DB from localStorage", e);
+            }
         }
-        setConfig({ ...DEFAULT_CONFIG, ...parsed });
-    } else {
-        setConfig(DEFAULT_CONFIG);
-    }
-    
-    // If "Remember Me" was active, log in as teacher automatically
-    if (autoLogin === 'teacher') {
-        setUserRole('teacher');
-    }
+        
+        if (sCfg) {
+            try {
+                const parsed = JSON.parse(sCfg);
+                // FORCE the hardcoded URL from DEFAULT_CONFIG to ensure connectivity
+                if (DEFAULT_CONFIG.googleAppsScriptUrl) {
+                    parsed.googleAppsScriptUrl = DEFAULT_CONFIG.googleAppsScriptUrl;
+                }
+                setConfig({ ...DEFAULT_CONFIG, ...parsed });
+            } catch (e) {
+                console.error("Error parsing Config from localStorage", e);
+                setConfig(DEFAULT_CONFIG);
+            }
+        } else {
+            setConfig(DEFAULT_CONFIG);
+        }
+        
+        // If "Remember Me" was active, log in as teacher automatically
+        if (autoLogin === 'teacher') {
+            setUserRole('teacher');
+        }
 
-    // Load admin order
-    const sOrder = localStorage.getItem('admin_order_v2');
-    if (sOrder) {
-        const parsedOrder = JSON.parse(sOrder);
-        // Ensure new sections are in the order if loaded from old state
-        if (!parsedOrder.includes('challenges_manage')) parsedOrder.splice(1, 0, 'challenges_manage');
-        if (!parsedOrder.includes('cloud_sync')) parsedOrder.unshift('cloud_sync');
-        setAdminOrder(parsedOrder);
+        // Load admin order
+        const sOrder = localStorage.getItem('admin_order_v2');
+        if (sOrder) {
+            try {
+                const parsedOrder = JSON.parse(sOrder);
+                // Ensure new sections are in the order if loaded from old state
+                if (!parsedOrder.includes('challenges_manage')) parsedOrder.splice(1, 0, 'challenges_manage');
+                if (!parsedOrder.includes('cloud_sync')) parsedOrder.unshift('cloud_sync');
+                setAdminOrder(parsedOrder);
+            } catch(e) {
+                console.error("Error parsing admin order", e);
+            }
+        }
+    } catch (e) {
+        console.error("General initialization error", e);
+        // Fallback to default config if critical failure
+        setConfig(DEFAULT_CONFIG);
     }
   }, []);
 
@@ -342,17 +363,30 @@ function App() {
     }
     setIsSyncing(true);
     try {
-      // Create a clean config for saving
+      // Create data to save
+      // If "Include Images" is FALSE (default), we strip images to make the payload light
+      let configToSave = config;
+      
+      if (!includeImagesInSync) {
+          configToSave = {
+              ...config,
+              storeItems: config.storeItems.map(item => ({
+                  ...item,
+                  image: undefined // Strip image to save bandwidth and prevent timeouts
+              }))
+          };
+      }
+
       const dataToSave = {
         db: db,
-        config: config
+        config: configToSave
       };
       
-      // CRITICAL: Google Apps Script Web Apps do not handle OPTIONS preflight requests well.
-      // We must use 'text/plain' as Content-Type to prevent the browser from sending an OPTIONS request.
-      // Google Apps Script can parse this string using JSON.parse(e.postData.contents).
+      // FIX FOR MOBILE: credentials: 'omit' prevents cookie conflicts
       const response = await fetch(config.googleAppsScriptUrl, {
         method: 'POST',
+        redirect: 'follow',
+        credentials: 'omit',
         headers: {
             'Content-Type': 'text/plain;charset=utf-8', 
         },
@@ -372,7 +406,7 @@ function App() {
       }
     } catch (e) {
       console.error(e);
-      alert(`שגיאה בשמירה לענן: ${(e as Error).message}\nודא שהכתובת נכונה (Web App URL) ושהגדרת "Anyone" בהרשאות.`);
+      alert(`שגיאה בשמירה לענן (Failed to fetch).\n\nסיבות אפשריות:\n1. גודל הנתונים (נסה לבטל את 'כלול תמונות').\n2. הכתובת שגויה.\n3. הרשאות גישה לא הוגדרו ל-"Anyone" (חובה!).\n\nפרטים טכניים: ${(e as Error).message}`);
     } finally {
       setIsSyncing(false);
     }
@@ -387,7 +421,12 @@ function App() {
     
     setIsSyncing(true);
     try {
-      const response = await fetch(config.googleAppsScriptUrl);
+      // FIX FOR MOBILE: credentials: 'omit'
+      const response = await fetch(config.googleAppsScriptUrl, {
+          redirect: 'follow',
+          credentials: 'omit'
+      });
+
       if (!response.ok) {
         throw new Error(`Status: ${response.status}`);
       }
@@ -395,10 +434,22 @@ function App() {
       
       if (data.db) saveDb(data.db);
       if (data.config) {
-          // Keep the URL from local if cloud is empty, otherwise take cloud
-          const mergedConfig = { ...data.config };
-          // Force keep hardcoded URL even if cloud has different one, or allow cloud to update it?
-          // Usually we want the cloud to be the source of truth, but the connectivity URL itself is special.
+          // SMART MERGE: If cloud config has no images (because we saved without them),
+          // preserve the local images!
+          const mergedStoreItems = (data.config.storeItems || []).map((cloudItem: StoreItem) => {
+               const localItem = config.storeItems.find(i => i.id === cloudItem.id);
+               return {
+                   ...cloudItem,
+                   // If cloud has image, use it. If not, fallback to local image.
+                   image: cloudItem.image || localItem?.image
+               };
+          });
+
+          const mergedConfig = { 
+              ...data.config,
+              storeItems: mergedStoreItems
+          };
+
           if (DEFAULT_CONFIG.googleAppsScriptUrl) {
               mergedConfig.googleAppsScriptUrl = DEFAULT_CONFIG.googleAppsScriptUrl;
           }
@@ -406,10 +457,10 @@ function App() {
       }
       
       alert("הנתונים נטענו בהצלחה!");
-      window.location.reload(); // Refresh to ensure state consistency
+      window.location.reload(); 
     } catch (e) {
       console.error(e);
-      alert(`שגיאה בטעינת הנתונים: ${(e as Error).message}\nודא שהכתובת נכונה (Web App URL) ושהגדרת "Anyone" בהרשאות.`);
+      alert(`שגיאה בטעינת הנתונים: ${(e as Error).message}\nודא שהכתובת נכונה וההרשאות מוגדרות ל-Anyone.`);
     } finally {
       setIsSyncing(false);
     }
@@ -650,6 +701,17 @@ function App() {
                             placeholder="https://script.google.com/macros/s/..."
                         />
                     </div>
+                    
+                    <button 
+                        onClick={() => setIncludeImagesInSync(!includeImagesInSync)}
+                        className="flex items-center gap-2 p-2 rounded-lg bg-black/10 border border-white/5 w-full text-xs hover:bg-black/20"
+                    >
+                        {includeImagesInSync ? <CheckSquare size={16} className="text-accent" /> : <Square size={16} className="text-gray-500" />}
+                        <span className={includeImagesInSync ? "text-white" : "text-gray-400"}>
+                            כלול תמונות בגיבוי (עלול להיות איטי)
+                        </span>
+                    </button>
+
                     <div className="flex gap-3">
                          <button 
                             onClick={handleCloudSave}
@@ -1510,5 +1572,3 @@ function App() {
     </div>
   );
 }
-
-export default App;
