@@ -145,5 +145,5 @@ export const DEFAULT_CONFIG: AppConfig = {
 4. שומרים על רכוש בית הספר.
 (ניתן לערוך טקסט זה במסך הניהול)`,
   theme: 'current',
-  googleAppsScriptUrl: "https://script.google.com/macros/s/AKfycbxxtGkZcsAFmCUEaegUlFPs7WR5dJ-6m5BXGd-KhCozjWHYBjXGKiFhILO74NwLYDIu/exec"
+  googleAppsScriptUrl: "https://script.google.com/macros/s/AKfycbyGro7MW0M3r3XK7dXG-DScL802R0OyoRZl_qIRBo-8kbdvEPJwyTeGiXHlpVscSyyVTA/exec"
 };
