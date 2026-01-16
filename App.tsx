@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Database, Student, AppConfig, DEFAULT_CONFIG, ThemeType, StoreItem, Purchase, UserRole, Challenge } from './types';
 import { parseExcel, fileToBase64 } from './utils';
 import { Podium } from './components/Podium';
@@ -10,7 +10,7 @@ import { BatchCommenter } from './components/BatchCommenter';
 import { LoginScreen } from './components/LoginScreen';
 import { GoogleGenAI } from "@google/genai";
 import { 
-  Home, ShieldCheck, ChevronUp, ChevronDown, Settings, Trash2, Trophy, FileSpreadsheet, Coins, Users, Phone, Download, UserPlus, LayoutGrid, Book, X, PlusCircle, ArrowUp, ArrowDown, GripVertical, MessageCircle, Undo, Scroll, Star, AlertCircle, Palette, Store, Image as ImageIcon, ShoppingBag, Plus, Package, Wand2, Loader2, Save, GraduationCap, LogOut, MinusCircle, KeyRound, Lock, Target, Cloud, Upload, RefreshCw, CheckSquare, Square
+  Home, ShieldCheck, ChevronUp, ChevronDown, Settings, Trash2, Trophy, FileSpreadsheet, Coins, Users, Phone, Download, UserPlus, LayoutGrid, Book, X, PlusCircle, ArrowUp, ArrowDown, GripVertical, MessageCircle, Undo, Scroll, Star, AlertCircle, Palette, Store, Image as ImageIcon, ShoppingBag, Plus, Package, Wand2, Loader2, Save, GraduationCap, LogOut, MinusCircle, KeyRound, Lock, Target, Cloud, Upload, RefreshCw, CheckSquare, Square, Check
 } from 'lucide-react';
 
 // Define the available admin sections
@@ -46,7 +46,9 @@ export default function App() {
   
   // Cloud Sync State
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [includeImagesInSync, setIncludeImagesInSync] = useState(false);
+  const skipAutoSaveRef = useRef(false); // To prevent auto-save loop after loading
 
   // Student Password Change State
   const [showChangePassword, setShowChangePassword] = useState(false);
@@ -83,72 +85,90 @@ export default function App() {
   const [isReordering, setIsReordering] = useState(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // --- Initialization ---
   useEffect(() => {
-    try {
-        const sDb = localStorage.getItem('bank_db');
-        const sCfg = localStorage.getItem('bank_cfg');
-        
-        // Auto Login Check
-        const autoLogin = localStorage.getItem('bank_auto_login');
+    const initApp = async () => {
+        try {
+            const sDb = localStorage.getItem('bank_db');
+            const sCfg = localStorage.getItem('bank_cfg');
+            const autoLogin = localStorage.getItem('bank_auto_login');
 
-        if (sDb) {
-            try {
-                setDb(JSON.parse(sDb));
-            } catch (e) {
-                console.error("Error parsing DB from localStorage", e);
+            if (sDb) {
+                try {
+                    setDb(JSON.parse(sDb));
+                } catch (e) { console.error(e); }
             }
-        }
-        
-        if (sCfg) {
-            try {
-                const parsed = JSON.parse(sCfg);
-                // FORCE the hardcoded URL from DEFAULT_CONFIG to ensure connectivity
-                if (DEFAULT_CONFIG.googleAppsScriptUrl) {
-                    parsed.googleAppsScriptUrl = DEFAULT_CONFIG.googleAppsScriptUrl;
-                }
-                setConfig({ ...DEFAULT_CONFIG, ...parsed });
-            } catch (e) {
-                console.error("Error parsing Config from localStorage", e);
-                setConfig(DEFAULT_CONFIG);
+            
+            let loadedConfig = DEFAULT_CONFIG;
+            if (sCfg) {
+                try {
+                    const parsed = JSON.parse(sCfg);
+                    if (DEFAULT_CONFIG.googleAppsScriptUrl) {
+                        parsed.googleAppsScriptUrl = DEFAULT_CONFIG.googleAppsScriptUrl;
+                    }
+                    loadedConfig = { ...DEFAULT_CONFIG, ...parsed };
+                } catch (e) { console.error(e); }
             }
-        } else {
+            setConfig(loadedConfig);
+            
+            // Auto Login Check
+            if (autoLogin === 'teacher') {
+                setUserRole('teacher');
+            }
+
+            // Load admin order
+            const sOrder = localStorage.getItem('admin_order_v2');
+            if (sOrder) {
+                try {
+                    const parsedOrder = JSON.parse(sOrder);
+                    if (!parsedOrder.includes('challenges_manage')) parsedOrder.splice(1, 0, 'challenges_manage');
+                    if (!parsedOrder.includes('cloud_sync')) parsedOrder.unshift('cloud_sync');
+                    setAdminOrder(parsedOrder);
+                } catch(e) { console.error(e); }
+            }
+
+            // --- AUTO LOAD FROM CLOUD ---
+            // We use the loaded config (or default) to get the URL
+            if (loadedConfig.googleAppsScriptUrl) {
+                await handleCloudLoad(true, loadedConfig);
+            }
+
+        } catch (e) {
+            console.error("Initialization error", e);
             setConfig(DEFAULT_CONFIG);
         }
-        
-        // If "Remember Me" was active, log in as teacher automatically
-        if (autoLogin === 'teacher') {
-            setUserRole('teacher');
-        }
+    };
 
-        // Load admin order
-        const sOrder = localStorage.getItem('admin_order_v2');
-        if (sOrder) {
-            try {
-                const parsedOrder = JSON.parse(sOrder);
-                // Ensure new sections are in the order if loaded from old state
-                if (!parsedOrder.includes('challenges_manage')) parsedOrder.splice(1, 0, 'challenges_manage');
-                if (!parsedOrder.includes('cloud_sync')) parsedOrder.unshift('cloud_sync');
-                setAdminOrder(parsedOrder);
-            } catch(e) {
-                console.error("Error parsing admin order", e);
-            }
-        }
-    } catch (e) {
-        console.error("General initialization error", e);
-        // Fallback to default config if critical failure
-        setConfig(DEFAULT_CONFIG);
-    }
+    initApp();
   }, []);
+
+  // --- Auto Save Logic ---
+  useEffect(() => {
+    // If we just loaded from cloud, skip the immediate save trigger
+    if (skipAutoSaveRef.current) {
+        skipAutoSaveRef.current = false;
+        return;
+    }
+
+    // Don't auto-save if empty or default (initial render mostly)
+    if (Object.keys(db).length === 0 && config === DEFAULT_CONFIG) return;
+
+    const timer = setTimeout(() => {
+        if (config.googleAppsScriptUrl) {
+            handleCloudSave(true);
+        }
+    }, 4000); // 4 seconds debounce
+
+    return () => clearTimeout(timer);
+  }, [db, config]);
+
 
   const handleLogin = (role: UserRole, studentName?: string, remember?: boolean) => {
     setUserRole(role);
     if (role === 'student' && studentName) {
         setLoggedInStudentName(studentName);
-        // Student logic: set theme to simple, view to home
         setCurrentView('home');
     }
-    
-    // Handle Remember Me for teacher
     if (role === 'teacher' && remember) {
         localStorage.setItem('bank_auto_login', 'teacher');
     }
@@ -159,7 +179,6 @@ export default function App() {
     setLoggedInStudentName(null);
     setCurrentView('home');
     setCart([]);
-    // Clear auto login
     localStorage.removeItem('bank_auto_login');
   };
 
@@ -184,10 +203,7 @@ export default function App() {
 
   // Theme Logic
   const getThemeVariables = (theme: ThemeType) => {
-    // Force specific themes based on role if needed, but keeping user pref is fine
-    // Student view might want a lighter theme?
     if (userRole === 'student') {
-       // Return a slightly simpler, blue-ish theme for students
        return {
           '--c-bg': '#0f172a',
           '--c-card': '#1e293b',
@@ -213,7 +229,7 @@ export default function App() {
           '--c-bg': '#f3f4f6',
           '--c-card': '#ffffff',
           '--c-text': '#111827',
-          '--c-accent': '#2563eb', // Blue
+          '--c-accent': '#2563eb', 
           '--c-accent-fg': '#ffffff',
           '--c-border': 'rgba(37, 99, 235, 0.2)',
         };
@@ -247,7 +263,6 @@ export default function App() {
                 logs: [...final[name].logs, ...studentData.logs] 
               };
             } else {
-              // Update contact info (Alfon)
               final[name] = { 
                 ...final[name],
                 nameMother: studentData.nameMother || final[name].nameMother,
@@ -277,27 +292,23 @@ export default function App() {
     saveConfig({ ...config, actionScores: newScores });
   };
   
-  // --- Student Password Management ---
   const handleChangePassword = () => {
       if (!loggedInStudentName) return;
       if (newPasswordInput.length < 4) {
           alert("הסיסמה חייבת להכיל לפחות 4 תווים");
           return;
       }
-      
       const updatedStudent = { ...db[loggedInStudentName], password: newPasswordInput };
       saveDb({ ...db, [loggedInStudentName]: updatedStudent });
-      
       alert("הסיסמה שונתה בהצלחה!");
       setShowChangePassword(false);
       setNewPasswordInput("");
   };
 
-  // --- Store Management Functions ---
   const handleAddStoreItem = () => {
     const newItem: StoreItem = {
       id: Date.now().toString(),
-      name: "", // Start empty to trigger auto-suggest
+      name: "", 
       emoji: "🎁",
       price: 50,
       stock: 10
@@ -329,14 +340,12 @@ export default function App() {
     }
   };
   
-  // --- Challenges Management ---
   const handleAddChallenge = () => {
       const newChallenge: Challenge = {
           id: Date.now().toString(),
           title: "",
           reward: 50
       };
-      // Ensure config.challenges exists
       const currentChallenges = config.challenges || [];
       saveConfig({ ...config, challenges: [...currentChallenges, newChallenge] });
   };
@@ -356,23 +365,25 @@ export default function App() {
   };
 
   // --- Cloud Sync Logic ---
-  const handleCloudSave = async () => {
-    if (!config.googleAppsScriptUrl) {
-      alert("יש להגדיר כתובת סקריפט Google Apps Script");
+  const handleCloudSave = async (isAuto = false) => {
+    const url = config.googleAppsScriptUrl;
+    if (!url) {
+      if (!isAuto) alert("יש להגדיר כתובת סקריפט Google Apps Script");
       return;
     }
+    
     setIsSyncing(true);
+    setSyncStatus('saving');
+    
     try {
-      // Create data to save
-      // If "Include Images" is FALSE (default), we strip images to make the payload light
       let configToSave = config;
-      
-      if (!includeImagesInSync) {
+      // Auto save does not send images to save bandwidth
+      if (!includeImagesInSync || isAuto) {
           configToSave = {
               ...config,
               storeItems: config.storeItems.map(item => ({
                   ...item,
-                  image: undefined // Strip image to save bandwidth and prevent timeouts
+                  image: undefined 
               }))
           };
       }
@@ -382,65 +393,68 @@ export default function App() {
         config: configToSave
       };
       
-      // FIX FOR MOBILE: credentials: 'omit' prevents cookie conflicts
-      const response = await fetch(config.googleAppsScriptUrl, {
+      const response = await fetch(url, {
         method: 'POST',
         redirect: 'follow',
         credentials: 'omit',
-        headers: {
-            'Content-Type': 'text/plain;charset=utf-8', 
-        },
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify(dataToSave)
       });
       
-      if (!response.ok) {
-         throw new Error(`Status: ${response.status}`);
-      }
+      if (!response.ok) throw new Error(`Status: ${response.status}`);
 
       const result = await response.json();
       
       if (result.status === 'success') {
-         alert("הנתונים נשמרו בענן בהצלחה!");
+         if (!isAuto) alert("הנתונים נשמרו בענן בהצלחה!");
+         setSyncStatus('saved');
+         // Revert to idle after 2 sec
+         setTimeout(() => setSyncStatus('idle'), 2000);
       } else {
-         alert("השמירה בוצעה, אך התקבל דיווח לא שגרתי מהשרת.");
+         if (!isAuto) alert("השמירה בוצעה, אך התקבל דיווח לא שגרתי מהשרת.");
+         setSyncStatus('error');
       }
     } catch (e) {
       console.error(e);
-      alert(`שגיאה בשמירה לענן (Failed to fetch).\n\nסיבות אפשריות:\n1. גודל הנתונים (נסה לבטל את 'כלול תמונות').\n2. הכתובת שגויה.\n3. הרשאות גישה לא הוגדרו ל-"Anyone" (חובה!).\n\nפרטים טכניים: ${(e as Error).message}`);
+      setSyncStatus('error');
+      if (!isAuto) alert(`שגיאה בשמירה לענן. פרטים: ${(e as Error).message}`);
     } finally {
       setIsSyncing(false);
     }
   };
 
-  const handleCloudLoad = async () => {
-    if (!config.googleAppsScriptUrl) {
-      alert("יש להגדיר כתובת סקריפט Google Apps Script");
+  // Accepting configOverride to allow loading before state is fully set on init
+  const handleCloudLoad = async (isAuto = false, configOverride?: AppConfig) => {
+    const url = configOverride?.googleAppsScriptUrl || config.googleAppsScriptUrl;
+    
+    if (!url) {
+      if (!isAuto) alert("יש להגדיר כתובת סקריפט Google Apps Script");
       return;
     }
-    if(!window.confirm("פעולה זו תדרוס את הנתונים המקומיים בנתונים מהענן. להמשיך?")) return;
+
+    if(!isAuto && !window.confirm("פעולה זו תדרוס את הנתונים המקומיים בנתונים מהענן. להמשיך?")) return;
     
     setIsSyncing(true);
+    setSyncStatus('saving'); // Reusing spinning icon
+
     try {
-      // FIX FOR MOBILE: credentials: 'omit'
-      const response = await fetch(config.googleAppsScriptUrl, {
+      const response = await fetch(url, {
           redirect: 'follow',
           credentials: 'omit'
       });
 
-      if (!response.ok) {
-        throw new Error(`Status: ${response.status}`);
-      }
+      if (!response.ok) throw new Error(`Status: ${response.status}`);
       const data = await response.json();
       
+      skipAutoSaveRef.current = true; // Prevent the load from triggering a save back
+
       if (data.db) saveDb(data.db);
       if (data.config) {
-          // SMART MERGE: If cloud config has no images (because we saved without them),
-          // preserve the local images!
+          // Merge images logic
           const mergedStoreItems = (data.config.storeItems || []).map((cloudItem: StoreItem) => {
                const localItem = config.storeItems.find(i => i.id === cloudItem.id);
                return {
                    ...cloudItem,
-                   // If cloud has image, use it. If not, fallback to local image.
                    image: cloudItem.image || localItem?.image
                };
           });
@@ -450,17 +464,24 @@ export default function App() {
               storeItems: mergedStoreItems
           };
 
+          // Keep the hardcoded URL
           if (DEFAULT_CONFIG.googleAppsScriptUrl) {
               mergedConfig.googleAppsScriptUrl = DEFAULT_CONFIG.googleAppsScriptUrl;
           }
           saveConfig(mergedConfig);
       }
       
-      alert("הנתונים נטענו בהצלחה!");
-      window.location.reload(); 
+      if (!isAuto) {
+          alert("הנתונים נטענו בהצלחה!");
+          window.location.reload(); 
+      }
+      setSyncStatus('saved');
+      setTimeout(() => setSyncStatus('idle'), 2000);
+
     } catch (e) {
       console.error(e);
-      alert(`שגיאה בטעינת הנתונים: ${(e as Error).message}\nודא שהכתובת נכונה וההרשאות מוגדרות ל-Anyone.`);
+      setSyncStatus('error');
+      if (!isAuto) alert(`שגיאה בטעינת הנתונים: ${(e as Error).message}`);
     } finally {
       setIsSyncing(false);
     }
@@ -471,8 +492,6 @@ export default function App() {
     setGeneratingItemId(item.id);
     try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        
-        // If name is empty, suggest a name first
         if (!item.name.trim()) {
             const nameResponse = await ai.models.generateContent({
                 model: 'gemini-3-flash-preview',
@@ -480,16 +499,14 @@ export default function App() {
             });
             const suggestedName = nameResponse.text?.trim() || "הפתעה";
             handleUpdateStoreItem(item.id, 'name', suggestedName);
-            item.name = suggestedName; // Update local var for next step
+            item.name = suggestedName; 
         }
 
-        // Generate Image
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash-image',
             contents: `Generate a cute, high-quality, 3D icon of ${item.name} (product) on a plain white background. It should look like a game asset.`,
         });
 
-        // Find image part
         const parts = response.candidates?.[0]?.content?.parts;
         if (parts) {
              for (const part of parts) {
@@ -523,7 +540,6 @@ export default function App() {
         return;
     }
 
-    // 1. Update Student (Deduct points, add Purchase logs)
     const newPurchases: Purchase[] = cart.map(item => ({
         id: Math.random().toString(36).substr(2, 9),
         itemId: item.id,
@@ -541,9 +557,7 @@ export default function App() {
 
     saveDb({ ...db, [student.name]: updatedStudent });
 
-    // 2. Update Inventory (Deduct stock)
     const updatedStoreItems = config.storeItems.map(storeItem => {
-        // Count how many of this item are in the cart
         const countInCart = cart.filter(c => c.id === storeItem.id).length;
         if (countInCart > 0) {
             return { ...storeItem, stock: Math.max(0, storeItem.stock - countInCart) };
@@ -552,11 +566,8 @@ export default function App() {
     });
 
     saveConfig({ ...config, storeItems: updatedStoreItems });
-
-    // 3. Clear Cart (but keep student selected for UI feedback)
     setCart([]);
-    
-    return true; // Signal success
+    return true; 
   };
 
   const handleBackup = () => {
@@ -577,7 +588,7 @@ export default function App() {
   };
 
   const handleRemoveFromPodium = (studentName: string) => {
-    if (userRole === 'student') return; // Security check
+    if (userRole === 'student') return;
     const newDb = { ...db };
     if (newDb[studentName]) {
       newDb[studentName] = { ...newDb[studentName], isHiddenFromPodium: true };
@@ -689,7 +700,7 @@ export default function App() {
                 <div className="space-y-4 pt-2">
                     <p className="text-xs text-gray-400">
                         סנכרון הנתונים ל-Google Sheets מאפשר גיבוי בענן ושיתוף בין מכשירים.
-                        הכתובת מוגדרת מראש במערכת.
+                        המערכת מבצעת שמירה אוטומטית ברקע.
                     </p>
                     <div className="bg-black/20 p-3 rounded-xl border border-border">
                         <label className="text-[10px] text-gray-400 block mb-1">כתובת ה-Web App של הסקריפט</label>
@@ -714,20 +725,20 @@ export default function App() {
 
                     <div className="flex gap-3">
                          <button 
-                            onClick={handleCloudSave}
+                            onClick={() => handleCloudSave(false)}
                             disabled={isSyncing}
                             className="flex-1 py-3 bg-sky-600 hover:bg-sky-500 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition disabled:opacity-50"
                          >
                             {isSyncing ? <RefreshCw size={14} className="animate-spin"/> : <Upload size={14} />}
-                            שמור לענן
+                            שמור כעת
                          </button>
                          <button 
-                            onClick={handleCloudLoad}
+                            onClick={() => handleCloudLoad(false)}
                             disabled={isSyncing}
                             className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition disabled:opacity-50 border border-white/10"
                          >
                              {isSyncing ? <RefreshCw size={14} className="animate-spin"/> : <Download size={14} />}
-                            טען מהענן
+                            טען כעת
                          </button>
                     </div>
                 </div>
@@ -761,6 +772,7 @@ export default function App() {
                     </div>
                 </div>
             );
+        // ... (Other admin sections remain the same) ...
         case 'challenges_manage':
             return (
                 <div className="space-y-4 pt-2">
@@ -992,7 +1004,28 @@ export default function App() {
             </div>
           )}
           <div>
-            <h1 className="text-lg font-black text-accent tracking-tight leading-none">הבנק הכיתתי</h1>
+            <div className="flex items-center gap-2">
+                <h1 className="text-lg font-black text-accent tracking-tight leading-none">הבנק הכיתתי</h1>
+                
+                {/* Auto Sync Indicator */}
+                {config.googleAppsScriptUrl && (
+                    <div title={
+                        syncStatus === 'saving' ? "שומר..." : 
+                        syncStatus === 'saved' ? "נשמר בענן" : 
+                        syncStatus === 'error' ? "שגיאה בסנכרון" : "מסונכרן"
+                    }>
+                        {syncStatus === 'saving' ? (
+                            <RefreshCw size={12} className="text-gray-400 animate-spin" />
+                        ) : syncStatus === 'saved' ? (
+                            <Check size={12} className="text-green-500" />
+                        ) : syncStatus === 'error' ? (
+                            <AlertCircle size={12} className="text-red-500" />
+                        ) : (
+                            <Cloud size={12} className="text-gray-600" />
+                        )}
+                    </div>
+                )}
+            </div>
             <p className="text-[9px] font-bold text-accent/50 uppercase tracking-widest leading-tight">{config.slogan}</p>
           </div>
         </div>
@@ -1284,8 +1317,6 @@ export default function App() {
                                 const sectionDef = ADMIN_SECTIONS.find(s => s.id === sectionId);
                                 if (!sectionDef) return null;
                                 const isCollapsed = adminCollapsed[sectionId];
-                                
-                                // Force expand Import/Export as they are just buttons
                                 const isAlwaysExpanded = sectionId === 'import_files' || sectionId === 'backup_reset' || sectionId === 'theme_settings';
                                 
                                 return (
@@ -1293,7 +1324,6 @@ export default function App() {
                                         key={sectionId}
                                         className={`bg-card rounded-[2rem] border border-border shadow-md overflow-hidden transition-all ${isReordering ? 'opacity-80 scale-[0.98] border-dashed border-accent' : ''}`}
                                     >
-                                        {/* Header */}
                                         <div 
                                             className={`p-4 flex items-center justify-between ${!isAlwaysExpanded ? 'cursor-pointer active:bg-white/5' : ''}`}
                                             onClick={() => {
@@ -1330,7 +1360,6 @@ export default function App() {
                                             )}
                                         </div>
                                         
-                                        {/* Content */}
                                         {(!isCollapsed || isAlwaysExpanded) && (
                                             <div className="p-4 pt-0 animate-in slide-in-from-top-2 fade-in">
                                                 {renderAdminSectionContent(sectionId)}
