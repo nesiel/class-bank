@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Database, Student, AppConfig, DEFAULT_CONFIG, ThemeType, StoreItem, Purchase, UserRole, Challenge } from './types';
+import { Database, Student, AppConfig, DEFAULT_CONFIG, ThemeType, StoreItem, Purchase, UserRole, Challenge, LearningResource, ResourceType } from './types';
 import { parseExcel, fileToBase64 } from './utils';
 import { Podium } from './components/Podium';
 import { StudentDetails } from './components/StudentDetails';
@@ -8,15 +8,17 @@ import { SeatingChart } from './components/SeatingChart';
 import { StoreView } from './components/StoreView';
 import { BatchCommenter } from './components/BatchCommenter';
 import { LoginScreen } from './components/LoginScreen';
+import { LearningCenter } from './components/LearningCenter';
 import { GoogleGenAI } from "@google/genai";
 import { 
-  Home, ShieldCheck, ChevronUp, ChevronDown, Settings, Trash2, Trophy, FileSpreadsheet, Coins, Users, Phone, Download, UserPlus, LayoutGrid, Book, X, PlusCircle, ArrowUp, ArrowDown, GripVertical, MessageCircle, Undo, Scroll, Star, AlertCircle, Palette, Store, Image as ImageIcon, ShoppingBag, Plus, Package, Wand2, Loader2, Save, GraduationCap, LogOut, MinusCircle, KeyRound, Lock, Target, Cloud, Upload, RefreshCw, CheckSquare, Square, Check
+  Home, ShieldCheck, ChevronUp, ChevronDown, Settings, Trash2, Trophy, FileSpreadsheet, Coins, Users, Phone, Download, UserPlus, LayoutGrid, Book, X, PlusCircle, ArrowUp, ArrowDown, GripVertical, MessageCircle, Undo, Scroll, Star, AlertCircle, Palette, Store, Image as ImageIcon, ShoppingBag, Plus, Package, Wand2, Loader2, Save, GraduationCap, LogOut, MinusCircle, KeyRound, Lock, Target, Cloud, Upload, RefreshCw, CheckSquare, Square, Check, BookOpen, Link as LinkIcon, FileText, HardDrive, FileQuestion, Copy, ExternalLink
 } from 'lucide-react';
 
 // Define the available admin sections
 const ADMIN_SECTIONS = [
   { id: 'cloud_sync', label: 'סנכרון לענן (Google Sheets)', icon: Cloud, color: 'text-sky-500', bg: 'bg-sky-500/10' },
   { id: 'import_files', label: 'ייבוא נתונים (אקסל)', icon: FileSpreadsheet, color: 'text-green-500', bg: 'bg-green-500/10' },
+  { id: 'learning_manage', label: 'ניהול מרכז למידה', icon: BookOpen, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
   { id: 'challenges_manage', label: 'ניהול אתגרים', icon: Target, color: 'text-orange-500', bg: 'bg-orange-500/10' },
   { id: 'store_manage', label: 'ניהול חנות ומלאי', icon: Store, color: 'text-accent', bg: 'bg-accent/10' },
   { id: 'score_settings', label: 'הגדרות ניקוד', icon: Settings, color: 'text-blue-400', bg: 'bg-blue-500/10' },
@@ -34,7 +36,7 @@ export default function App() {
   const [userRole, setUserRole] = useState<UserRole>('guest');
   const [loggedInStudentName, setLoggedInStudentName] = useState<string | null>(null);
 
-  const [currentView, setCurrentView] = useState<'home' | 'admin' | 'contacts' | 'seating' | 'store'>('home');
+  const [currentView, setCurrentView] = useState<'home' | 'admin' | 'contacts' | 'seating' | 'store' | 'learning'>('home');
   const [showAll, setShowAll] = useState(false);
   const [showAllTefillah, setShowAllTefillah] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
@@ -54,12 +56,23 @@ export default function App() {
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [newPasswordInput, setNewPasswordInput] = useState("");
   
+  // Learning Admin State
+  const [newSubjectName, setNewSubjectName] = useState("");
+  const [newResource, setNewResource] = useState<{title: string, subject: string, type: ResourceType, url: string}>({
+      title: "", subject: "", type: 'link', url: ""
+  });
+  // Quiz Generator State
+  const [quizMaterial, setQuizMaterial] = useState("");
+  const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
+  const [generatedScript, setGeneratedScript] = useState<string | null>(null);
+  
   // Admin Collapsibles State
   const [adminCollapsed, setAdminCollapsed] = useState<Record<string, boolean>>({
     store_manage: true,
     score_settings: true,
     rules_manage: true,
     challenges_manage: true,
+    learning_manage: true,
   });
   const [generatingItemId, setGeneratingItemId] = useState<string | null>(null);
 
@@ -74,6 +87,7 @@ export default function App() {
   const [adminOrder, setAdminOrder] = useState<string[]>([
     'cloud_sync',
     'import_files',
+    'learning_manage',
     'challenges_manage',
     'store_manage', 
     'score_settings', 
@@ -121,7 +135,8 @@ export default function App() {
             if (sOrder) {
                 try {
                     const parsedOrder = JSON.parse(sOrder);
-                    if (!parsedOrder.includes('challenges_manage')) parsedOrder.splice(1, 0, 'challenges_manage');
+                    if (!parsedOrder.includes('learning_manage')) parsedOrder.splice(2, 0, 'learning_manage');
+                    if (!parsedOrder.includes('challenges_manage')) parsedOrder.splice(3, 0, 'challenges_manage');
                     if (!parsedOrder.includes('cloud_sync')) parsedOrder.unshift('cloud_sync');
                     setAdminOrder(parsedOrder);
                 } catch(e) { console.error(e); }
@@ -364,6 +379,129 @@ export default function App() {
       }
   };
 
+  // --- Learning Center Management ---
+  const handleAddSubject = () => {
+      if (!newSubjectName.trim()) return;
+      const current = config.learningSubjects || [];
+      if (current.includes(newSubjectName)) { alert("קיים כבר"); return; }
+      saveConfig({ ...config, learningSubjects: [...current, newSubjectName] });
+      setNewSubjectName("");
+  };
+
+  const handleDeleteSubject = (subject: string) => {
+      if (!window.confirm(`למחוק את ${subject}? זה לא ימחק את הקבצים, רק את התיקייה.`)) return;
+      saveConfig({ ...config, learningSubjects: (config.learningSubjects || []).filter(s => s !== subject) });
+  };
+
+  const handleAddResource = () => {
+      if (!newResource.title || !newResource.subject || !newResource.url) {
+          alert("נא למלא את כל השדות");
+          return;
+      }
+      const newItem: LearningResource = {
+          id: Date.now().toString(),
+          ...newResource,
+          dateAdded: new Date().toLocaleDateString('he-IL')
+      };
+      saveConfig({ ...config, learningResources: [...(config.learningResources || []), newItem] });
+      setNewResource({ title: "", subject: "", type: 'link', url: "" });
+      alert("התווסף בהצלחה!");
+  };
+
+  const handleDeleteResource = (id: string) => {
+      if (!window.confirm("למחוק?")) return;
+      saveConfig({ ...config, learningResources: (config.learningResources || []).filter(r => r.id !== id) });
+  };
+
+  const handleResourceFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files?.[0]) {
+          try {
+              const base64 = await fileToBase64(e.target.files[0]);
+              setNewResource(prev => ({ ...prev, url: base64, type: 'file' }));
+          } catch(err) {
+              alert("שגיאה בקובץ");
+          }
+      }
+  };
+
+  const setPresetResource = (type: 'drive' | 'quiz' | 'review') => {
+      if (type === 'drive') {
+          setNewResource(prev => ({...prev, type: 'link', title: 'תיקיית חומרים (דרייב)', url: ''}));
+      } else if (type === 'quiz') {
+          setNewResource(prev => ({...prev, type: 'form', title: 'בוחן', url: ''}));
+      } else if (type === 'review') {
+          setNewResource(prev => ({...prev, type: 'form', title: 'חזרה למבחן', url: ''}));
+      }
+  };
+
+  const handleGenerateQuizScript = async () => {
+      if (!quizMaterial.trim()) {
+          alert("נא להדביק חומר לימוד לבוחן");
+          return;
+      }
+
+      setIsGeneratingQuiz(true);
+      try {
+          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+          const prompt = `
+            Analyze the following Hebrew text and create a quiz with 4-5 multiple choice questions.
+            Return ONLY a valid JSON array of objects. Do not wrap in markdown blocks.
+            Structure:
+            [
+              {
+                "q": "Question text in Hebrew",
+                "opts": ["Option 1", "Option 2", "Option 3", "Option 4"],
+                "a": 1, // Index of correct answer (0-3)
+                "p": 20 // Points
+              }
+            ]
+            
+            Text:
+            ${quizMaterial}
+          `;
+
+          const response = await ai.models.generateContent({
+              model: "gemini-3-flash-preview",
+              contents: prompt
+          });
+          
+          let jsonStr = response.text || "[]";
+          // Cleanup potential markdown formatting
+          jsonStr = jsonStr.replace(/```json/g, '').replace(/```/g, '').trim();
+          
+          const questions = JSON.parse(jsonStr);
+
+          // Generate GAS Code
+          const scriptCode = `
+function createGeneratedQuiz() {
+  var form = FormApp.create('בוחן חדש (נוצר ע"י AI)');
+  form.setIsQuiz(true);
+  form.addTextItem().setTitle('שם התלמיד').setRequired(true);
+
+  var questions = ${JSON.stringify(questions)};
+
+  questions.forEach(function(q) {
+    var item = form.addMultipleChoiceItem();
+    var choices = q.opts.map(function(opt, index) {
+       return item.createChoice(opt, index === q.a);
+    });
+    item.setTitle(q.q).setPoints(q.p).setChoices(choices);
+  });
+  
+  Logger.log('Form URL: ' + form.getPublishedUrl());
+}
+          `;
+
+          setGeneratedScript(scriptCode);
+          setQuizMaterial("");
+      } catch (e) {
+          console.error(e);
+          alert("שגיאה ביצירת הבוחן. נסה שנית.");
+      } finally {
+          setIsGeneratingQuiz(false);
+      }
+  };
+
   // --- Cloud Sync Logic ---
   const handleCloudSave = async (isAuto = false) => {
     const url = config.googleAppsScriptUrl;
@@ -384,7 +522,10 @@ export default function App() {
               storeItems: config.storeItems.map(item => ({
                   ...item,
                   image: undefined 
-              }))
+              })),
+              learningResources: (config.learningResources || []).map(r => 
+                r.type === 'file' && r.url.length > 1000 ? { ...r, url: 'OMITTED_AUTO_SAVE' } : r
+              )
           };
       }
 
@@ -450,7 +591,7 @@ export default function App() {
 
       if (data.db) saveDb(data.db);
       if (data.config) {
-          // Merge images logic
+          // Merge images logic (Store items)
           const mergedStoreItems = (data.config.storeItems || []).map((cloudItem: StoreItem) => {
                const localItem = config.storeItems.find(i => i.id === cloudItem.id);
                return {
@@ -458,10 +599,20 @@ export default function App() {
                    image: cloudItem.image || localItem?.image
                };
           });
+          
+          // Merge learning resources (restore files if omitted)
+          const mergedResources = (data.config.learningResources || []).map((cloudRes: LearningResource) => {
+               if (cloudRes.url === 'OMITTED_AUTO_SAVE') {
+                   const localRes = (config.learningResources || []).find(r => r.id === cloudRes.id);
+                   return { ...cloudRes, url: localRes?.url || '' };
+               }
+               return cloudRes;
+          });
 
           const mergedConfig = { 
               ...data.config,
-              storeItems: mergedStoreItems
+              storeItems: mergedStoreItems,
+              learningResources: mergedResources
           };
 
           // Keep the hardcoded URL
@@ -718,7 +869,7 @@ export default function App() {
                         className="flex items-center gap-2 p-2 rounded-lg bg-black/10 border border-white/5 w-full text-xs hover:bg-black/20"
                     >
                         {includeImagesInSync ? <CheckSquare size={16} className="text-accent" /> : <Square size={16} className="text-gray-500" />}
-                        <span className={includeImagesInSync ? "text-white" : "text-gray-400"}>
+                        <span className="text-white">
                             כלול תמונות בגיבוי (עלול להיות איטי)
                         </span>
                     </button>
@@ -772,7 +923,127 @@ export default function App() {
                     </div>
                 </div>
             );
-        // ... (Other admin sections remain the same) ...
+        case 'learning_manage':
+            return (
+                <div className="space-y-4 pt-2">
+                    {/* Quiz Generator AI */}
+                    <div className="bg-[#d4af37]/10 border border-[#d4af37]/20 p-3 rounded-xl space-y-2">
+                        <h4 className="text-xs font-bold text-[#d4af37] flex items-center gap-1">
+                            <Wand2 size={12}/> מחולל בחנים (AI)
+                        </h4>
+                        <textarea 
+                            className="w-full h-20 bg-black/20 border border-white/10 rounded-lg p-2 text-xs text-white outline-none resize-none placeholder-gray-500"
+                            placeholder="הדבק כאן את חומר הלימוד (גמרא, משנה, היסטוריה...) ואנו נייצר סקריפט לבוחן"
+                            value={quizMaterial}
+                            onChange={(e) => setQuizMaterial(e.target.value)}
+                        />
+                        <button 
+                            onClick={handleGenerateQuizScript}
+                            disabled={isGeneratingQuiz || !quizMaterial}
+                            className="w-full py-2 bg-[#d4af37] text-black font-bold text-xs rounded-lg flex items-center justify-center gap-2 disabled:opacity-50 hover:opacity-90 transition"
+                        >
+                            {isGeneratingQuiz ? <Loader2 size={14} className="animate-spin"/> : <FileQuestion size={14}/>}
+                            צור סקריפט לבוחן
+                        </button>
+                    </div>
+
+                    <div className="border-t border-border my-2"></div>
+
+                    {/* Add Subject */}
+                    <div className="flex gap-2 bg-black/20 p-2 rounded-xl border border-white/5">
+                        <input 
+                            type="text" 
+                            className="flex-1 bg-transparent border-none text-xs text-white outline-none px-2"
+                            placeholder="שם מקצוע/תיקייה חדשה..."
+                            value={newSubjectName}
+                            onChange={(e) => setNewSubjectName(e.target.value)}
+                        />
+                        <button onClick={handleAddSubject} className="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded-lg font-bold">הוסף</button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        {(config.learningSubjects || []).map(s => (
+                            <div key={s} className="flex items-center gap-1 bg-emerald-500/10 text-emerald-500 px-2 py-1 rounded-full text-xs border border-emerald-500/20">
+                                <span>{s}</span>
+                                <button onClick={() => handleDeleteSubject(s)} className="hover:text-red-400"><X size={12}/></button>
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className="border-t border-border my-2"></div>
+
+                    {/* Add Resource */}
+                    <div className="space-y-3 bg-black/10 p-3 rounded-xl border border-white/5">
+                        <div className="flex justify-between items-center">
+                            <h4 className="text-xs font-bold text-gray-400">הוספת חומר לימוד</h4>
+                            <div className="flex gap-1">
+                                <button onClick={() => setPresetResource('drive')} className="p-1 bg-blue-500/20 text-blue-400 rounded hover:bg-blue-500/30 text-[10px] flex items-center gap-1"><HardDrive size={10}/> דרייב</button>
+                                <button onClick={() => setPresetResource('quiz')} className="p-1 bg-purple-500/20 text-purple-400 rounded hover:bg-purple-500/30 text-[10px] flex items-center gap-1"><FileQuestion size={10}/> בוחן</button>
+                                <button onClick={() => setPresetResource('review')} className="p-1 bg-indigo-500/20 text-indigo-400 rounded hover:bg-indigo-500/30 text-[10px] flex items-center gap-1"><FileText size={10}/> חזרה</button>
+                            </div>
+                        </div>
+
+                        <input 
+                            type="text" 
+                            placeholder="כותרת (לדוגמה: סיכום משנה פרק א)" 
+                            className="w-full bg-black/20 border border-white/10 rounded-lg p-2 text-xs text-white outline-none"
+                            value={newResource.title}
+                            onChange={(e) => setNewResource({...newResource, title: e.target.value})}
+                        />
+                        <div className="flex gap-2">
+                            <select 
+                                className="bg-black/20 border border-white/10 rounded-lg p-2 text-xs text-white outline-none flex-1"
+                                value={newResource.subject}
+                                onChange={(e) => setNewResource({...newResource, subject: e.target.value})}
+                            >
+                                <option value="">בחר מקצוע...</option>
+                                {(config.learningSubjects || []).map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                            <select 
+                                className="bg-black/20 border border-white/10 rounded-lg p-2 text-xs text-white outline-none flex-1"
+                                value={newResource.type}
+                                onChange={(e) => setNewResource({...newResource, type: e.target.value as ResourceType})}
+                            >
+                                <option value="link">קישור / דרייב / Forms</option>
+                                <option value="file">קובץ להורדה</option>
+                                <option value="video">סרטון</option>
+                            </select>
+                        </div>
+                        
+                        {newResource.type === 'file' ? (
+                            <input type="file" onChange={handleResourceFileUpload} className="text-xs text-gray-400"/>
+                        ) : (
+                            <input 
+                                type="text" 
+                                placeholder="כתובת URL (קישור לדרייב או טופס)" 
+                                className="w-full bg-black/20 border border-white/10 rounded-lg p-2 text-xs text-white outline-none"
+                                value={newResource.url}
+                                onChange={(e) => setNewResource({...newResource, url: e.target.value})}
+                            />
+                        )}
+
+                        <button 
+                            onClick={handleAddResource}
+                            className="w-full bg-emerald-600 text-white font-bold py-2 rounded-lg text-xs hover:bg-emerald-500 transition"
+                        >
+                            שמור חומר לימוד
+                        </button>
+                    </div>
+
+                    {/* List Resources */}
+                    <div className="max-h-40 overflow-y-auto pr-1 space-y-2">
+                         {(config.learningResources || []).map(res => (
+                             <div key={res.id} className="flex justify-between items-center bg-white/5 p-2 rounded-lg border border-white/5 text-xs">
+                                 <div className="truncate flex-1 flex items-center gap-2">
+                                     {res.url.includes('drive') && <HardDrive size={12} className="text-blue-500"/>}
+                                     {res.url.includes('forms') && <FileQuestion size={12} className="text-purple-500"/>}
+                                     <span className="text-emerald-400 font-bold">{res.subject}:</span> {res.title}
+                                 </div>
+                                 <button onClick={() => handleDeleteResource(res.id)} className="text-red-500/50 hover:text-red-500"><Trash2 size={14}/></button>
+                             </div>
+                         ))}
+                    </div>
+                </div>
+            );
         case 'challenges_manage':
             return (
                 <div className="space-y-4 pt-2">
@@ -978,12 +1249,22 @@ export default function App() {
     }
   };
 
+  if (currentView === 'learning') {
+      return (
+          <LearningCenter 
+            config={config} 
+            onClose={() => setCurrentView('home')} 
+          />
+      );
+  }
+
   if (userRole === 'guest') {
     return (
         <LoginScreen 
             students={Object.values(db)}
             teacherPin={config.teacherPin}
             onLogin={handleLogin}
+            onEnterLearning={() => setCurrentView('learning')}
             logo={config.logo}
         />
     );
@@ -1118,10 +1399,10 @@ export default function App() {
                                   <Store size={24} className="text-accent" />
                                   <span className="text-xs font-bold text-accent">לחנות ההפתעות</span>
                               </button>
-                              <div className="p-4 bg-white/5 border border-white/10 rounded-2xl flex flex-col items-center justify-center gap-2">
-                                  <Star size={24} className="text-yellow-500" />
-                                  <span className="text-xs font-bold text-gray-300">פעולות אחרונות</span>
-                              </div>
+                              <button onClick={() => setCurrentView('learning')} className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex flex-col items-center justify-center gap-2 active:scale-95 transition">
+                                  <BookOpen size={24} className="text-emerald-500" />
+                                  <span className="text-xs font-bold text-emerald-400">מרכז למידה</span>
+                              </button>
                           </div>
 
                           {/* Log History (Simplified) */}
@@ -1393,7 +1674,7 @@ export default function App() {
                 </div>
             )}
 
-            {/* Full Height Apps (Seating, Store) - Managing their own scroll within this container */}
+            {/* Full Height Apps (Seating, Store, Learning) - Managing their own scroll within this container */}
             {currentView === 'seating' && (
                 <div className="absolute inset-0 pt-16 pb-24 px-0 overflow-hidden">
                     <SeatingChart 
@@ -1568,6 +1849,49 @@ export default function App() {
                <div className="text-txt/80 whitespace-pre-line leading-relaxed text-center text-sm font-medium">
                   {config.rules}
                </div>
+            </div>
+         </div>
+      )}
+      
+      {/* Generated Script Modal */}
+      {generatedScript && (
+         <div className="fixed inset-0 z-[70] bg-black/90 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in">
+            <div className="bg-card w-full max-w-lg rounded-[2rem] border border-[#d4af37]/30 p-8 shadow-2xl relative flex flex-col gap-4">
+                <button onClick={() => setGeneratedScript(null)} className="absolute top-4 left-4 p-2 bg-white/5 rounded-full text-txt hover:bg-white/10 active:scale-90 transition-transform"><X size={20}/></button>
+                
+                <div className="text-center">
+                   <div className="inline-block p-3 rounded-full bg-[#d4af37]/10 text-[#d4af37] mb-2">
+                       <FileQuestion size={32} />
+                   </div>
+                   <h2 className="text-2xl font-black text-[#d4af37]">הסקריפט מוכן!</h2>
+                   <p className="text-txt/70 text-sm mt-1">
+                     העתק את הקוד והדבק אותו בעורך הסקריפטים של גוגל
+                   </p>
+                </div>
+
+                <div className="relative group">
+                    <textarea 
+                        readOnly
+                        value={generatedScript}
+                        className="w-full h-48 bg-black/30 border border-white/10 rounded-xl p-3 text-[10px] font-mono text-green-400 outline-none resize-none focus:border-[#d4af37]/50"
+                    />
+                    <button 
+                       onClick={() => {
+                           navigator.clipboard.writeText(generatedScript).then(() => alert("הקוד הועתק!")).catch(e => alert("שגיאה בהעתקה: " + e));
+                       }}
+                       className="absolute top-2 left-2 p-2 bg-white/10 text-white rounded-lg hover:bg-white/20 transition-colors backdrop-blur-md border border-white/5"
+                       title="העתק ללוח"
+                    >
+                       <Copy size={16} />
+                    </button>
+                </div>
+
+                <button 
+                   onClick={() => window.open('https://script.google.com/home', '_blank')}
+                   className="w-full py-3 bg-[#d4af37] text-black font-bold rounded-xl flex items-center justify-center gap-2 hover:opacity-90 transition active:scale-95"
+                >
+                   <ExternalLink size={18} /> פתח את Google Apps Script
+                </button>
             </div>
          </div>
       )}

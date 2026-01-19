@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Student } from '../types';
 import { User, RefreshCw, XCircle, Users, List, Copy, Loader2, Info, Printer, ArrowRightLeft, Move, X } from 'lucide-react';
@@ -184,8 +185,18 @@ export const SeatingChart: React.FC<SeatingChartProps> = ({ students, onUpdateSt
       }
       text += "\n";
     });
-    navigator.clipboard.writeText(text);
-    alert("הרשימה הועתקה ללוח!");
+    
+    // Improved clipboard handling
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text)
+            .then(() => alert("הרשימה הועתקה ללוח!"))
+            .catch((err) => {
+                console.error("Clipboard error:", err);
+                alert("שגיאה בהעתקה: " + err.message);
+            });
+    } else {
+        alert("הדפדפן שלך אינו תומך בהעתקה אוטומטית.");
+    }
   };
 
   const handlePrint = () => {

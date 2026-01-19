@@ -79,6 +79,18 @@ export interface StoreItem {
 export type ThemeType = 'current' | 'modern' | 'simple';
 export type UserRole = 'teacher' | 'student' | 'guest';
 
+// --- Learning Center Types ---
+export type ResourceType = 'link' | 'file' | 'video' | 'form';
+
+export interface LearningResource {
+    id: string;
+    title: string;
+    subject: string;
+    type: ResourceType;
+    url: string; // URL or Base64 data
+    dateAdded: string;
+}
+
 export interface AppConfig {
   slogan: string;
   logo: string;
@@ -88,6 +100,11 @@ export interface AppConfig {
   actionScores: Record<string, number>;
   storeItems: StoreItem[]; 
   challenges: Challenge[]; // New: List of active challenges
+  
+  // Learning Center
+  learningSubjects: string[];
+  learningResources: LearningResource[];
+
   rules: string;
   theme: ThemeType;
   googleAppsScriptUrl?: string; // Sync URL
@@ -139,6 +156,8 @@ export const DEFAULT_CONFIG: AppConfig = {
     { id: '4', title: 'סיום מסכת משניות', reward: 100 },
     { id: '5', title: 'שבוע תפילת מנחה', reward: 30 },
   ],
+  learningSubjects: ['משנה', 'גמרא', 'חומש', 'הלכה', 'כללי'],
+  learningResources: [],
   rules: `תקנון הכיתה:
 1. יש להגיע בזמן לשיעורים.
 2. יש להביא ציוד לימודי מלא.

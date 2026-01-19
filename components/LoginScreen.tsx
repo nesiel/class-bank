@@ -1,16 +1,18 @@
 
+
 import React, { useState } from 'react';
 import { Database, Student, UserRole } from '../types';
-import { GraduationCap, Lock, ArrowRight, User, KeyRound, Coins, CheckSquare, Square, ChevronRight } from 'lucide-react';
+import { GraduationCap, Lock, ArrowRight, User, KeyRound, Coins, CheckSquare, Square, ChevronRight, BookOpen } from 'lucide-react';
 
 interface LoginScreenProps {
   students: Student[];
   teacherPin: string;
   onLogin: (role: UserRole, studentName?: string, remember?: boolean) => void;
+  onEnterLearning: () => void;
   logo?: string;
 }
 
-export const LoginScreen: React.FC<LoginScreenProps> = ({ students, teacherPin, onLogin, logo }) => {
+export const LoginScreen: React.FC<LoginScreenProps> = ({ students, teacherPin, onLogin, onEnterLearning, logo }) => {
   const [view, setView] = useState<'main' | 'teacher' | 'student' | 'student-pin'>('main');
   const [pinInput, setPinInput] = useState("");
   const [error, setError] = useState("");
@@ -147,6 +149,22 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ students, teacherPin, 
                     </div>
                     <ArrowRight className="text-gray-500 group-hover:text-blue-400 transition-colors" />
                 </button>
+
+                <button 
+                    onClick={onEnterLearning}
+                    className="w-full bg-[#14532d] border border-green-500/30 p-5 rounded-2xl flex items-center justify-between group hover:border-green-400 transition-all active:scale-95 shadow-lg"
+                >
+                    <div className="flex items-center gap-4">
+                        <div className="bg-green-500/10 p-3 rounded-full text-green-400">
+                            <BookOpen size={24} />
+                        </div>
+                        <div className="text-right">
+                            <span className="block text-lg font-bold text-white group-hover:text-green-400 transition-colors">מרכז למידה</span>
+                            <span className="text-xs text-gray-400">חזרה למבחנים, דפי עבודה וטפסים</span>
+                        </div>
+                    </div>
+                    <ArrowRight className="text-gray-500 group-hover:text-green-400 transition-colors" />
+                </button>
             </div>
         )}
 
@@ -250,7 +268,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ students, teacherPin, 
 
       </div>
       
-      <p className="fixed bottom-4 text-xs text-gray-600 font-mono">v1.1 - Secure ClassBank</p>
+      <p className="fixed bottom-4 text-xs text-gray-600 font-mono">v1.2 - Secure ClassBank</p>
     </div>
   );
 };
