@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import { Student, AppConfig, Challenge } from '../types';
 import { X, Trash2, Calendar, MessageCircle, Phone, Heart, Users, GraduationCap, PlusCircle, Check, MinusCircle, Mail, Smartphone, Home, Trophy, Filter, RotateCcw, KeyRound, Target } from 'lucide-react';
@@ -27,14 +28,16 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
 
   if (!student) return null;
 
-  // Filter logs if keyword is provided
+  const isSemesterMode = filterKeyword === 'SEMESTER_MODE';
+
+  // Filter logs if keyword is provided, but if in Semester Mode show everything (it's a historical snapshot)
   const logsWithIndex = student.logs.map((log, index) => ({ ...log, originalIndex: index }));
   
-  const displayedLogs = filterKeyword 
+  const displayedLogs = filterKeyword && !isSemesterMode
     ? logsWithIndex.filter(l => l.sub && l.sub.includes(filterKeyword))
     : logsWithIndex;
 
-  const displayTotal = filterKeyword
+  const displayTotal = filterKeyword && !isSemesterMode
     ? displayedLogs.reduce((acc, l) => acc + l.s, 0)
     : student.total;
 
@@ -107,7 +110,11 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
             <h2 className="text-3xl font-bold text-accent">{student.name}</h2>
             <div className="flex flex-col gap-1 mt-1">
                 <p className="text-accent/50 text-xs italic flex items-center gap-1">
-                   {filterKeyword ? (
+                   {isSemesterMode ? (
+                       <span className="bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded-full flex items-center gap-1 font-bold">
+                           <Trophy size={10} /> נתוני מצטייני מחצית (ארכיון)
+                       </span>
+                   ) : filterKeyword ? (
                        <span className="bg-accent/20 text-accent px-2 py-0.5 rounded-full flex items-center gap-1">
                            <Filter size={10} /> נתוני תפילה בלבד
                        </span>
@@ -137,7 +144,7 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           
           {/* Admin Tools: Password Reset */}
-          {isAuthenticated && !filterKeyword && (
+          {isAuthenticated && !filterKeyword && !isSemesterMode && (
               <div className="flex gap-2">
                   {student.isHiddenFromPodium ? (
                     <button 
@@ -160,8 +167,8 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
               </div>
           )}
 
-          {/* Quick Actions / Manual Add - Only show if not filtered */}
-          {isAuthenticated && !filterKeyword && (
+          {/* Quick Actions / Manual Add - Only show if not filtered and not semester mode */}
+          {isAuthenticated && !filterKeyword && !isSemesterMode && (
             <div className="bg-accent/5 p-4 rounded-3xl border border-accent/20">
                {!showAddAction && !showChallengeSelect ? (
                  <div className="flex gap-2">
@@ -301,12 +308,12 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
           {/* Activity Logs */}
           <div className="space-y-3">
             <h3 className="text-[10px] font-bold text-gray-500 uppercase flex items-center gap-2 mr-1">
-              <Calendar size={12}/> פירוט פעולות וניקוד {filterKeyword && "(מסונן)"}
+              <Calendar size={12}/> פירוט פעולות וניקוד {filterKeyword && !isSemesterMode && "(מסונן)"}
             </h3>
             <div className="space-y-2">
               {displayedLogs.length === 0 ? (
                 <div className="text-center py-10 text-gray-500 text-xs">
-                    {filterKeyword ? "לא נמצאו נתונים תואמים לסינון" : "טרם נרשמו פעולות"}
+                    {filterKeyword && !isSemesterMode ? "לא נמצאו נתונים תואמים לסינון" : "טרם נרשמו פעולות"}
                 </div>
               ) : (
                 displayedLogs.slice().reverse().map((logItem, idx) => (
@@ -328,7 +335,7 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
                       <p className={`font-black text-lg ${logItem.s >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                         {logItem.s > 0 ? '+' : ''}{logItem.s}₪
                       </p>
-                      {isAuthenticated && (
+                      {isAuthenticated && !isSemesterMode && (
                         <button onClick={() => onDeleteLog(student.name, logItem.originalIndex)} className="text-red-500/30 hover:text-red-500 transition-colors mt-2">
                           <Trash2 size={12}/>
                         </button>
@@ -344,7 +351,7 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
         <div className="p-6 bg-primary border-t border-accent/20 flex justify-between items-center">
           <div className="flex items-center gap-2 text-accent/60">
             <Heart size={16} className="animate-pulse" />
-            <span className="text-xs font-bold uppercase tracking-widest">{filterKeyword ? "מאזן תפילה" : "סך הכל עושר כיתתי"}</span>
+            <span className="text-xs font-bold uppercase tracking-widest">{isSemesterMode ? "ציון מחצית כולל" : filterKeyword ? "מאזן תפילה" : "סך הכל עושר כיתתי"}</span>
           </div>
           <span className="text-3xl font-black text-accent">{displayTotal}₪</span>
         </div>

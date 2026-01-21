@@ -61,63 +61,42 @@ export const parseExcel = async (file: File, config: AppConfig): Promise<Databas
         
         const rawJson = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
         
+        // Find header row index
         let headerRowIndex = 0;
         rawJson.forEach((row, index) => {
             const rowStr = row.join(' ');
-            if (rowStr.includes('שם התלמיד') || rowStr.includes('שם פרטי') && rowStr.includes('שם משפחה')) {
+            // Relaxed header detection
+            if (rowStr.includes('שם התלמיד') || 
+               (rowStr.includes('שם') && rowStr.includes('משפחה')) ||
+               (rowStr.includes('שם') && rowStr.includes('כיתה'))) {
                 headerRowIndex = index;
             }
         });
 
         const json = XLSX.utils.sheet_to_json(sheet, { range: headerRowIndex }) as any[];
-        
         const db: Database = {};
         
-        // Enhanced Header Mapping
         const headersMap = {
           name: ['שם התלמיד', 'שם פרטי', 'שם משפחה', 'שם מלא', 'תלמיד', 'שם'],
           lastName: ['שם משפחה', 'משפחה'],
           firstName: ['שם פרטי', 'פרטי'],
-          
-          // Metadata columns to ignore when parsing scores
-          ignore: ['מס', "מס'", 'שכבה', 'כיתה', 'ת.ז', 'תעודת זהות', 'מגדר', 'מין'],
-
-          // Student Contact
+          // Contact mappings...
           studentCell: ['סלולרי של התלמיד', 'נייד תלמיד', 'טלפון תלמיד', 'פלאפון תלמיד', 'נייד של התלמיד'],
           studentEmail: ['מייל תלמיד', 'דוא"ל תלמיד', 'אימייל תלמיד', 'Student Email'],
           homePhone: ['טלפון בבית', 'טלפון בית', 'בבית', 'Home Phone', 'טלפון נייח'],
-
-          // Mother
           motherName: ['שם האמא', 'שם האם', 'אמא', 'שם הורה 1', 'הורה 1', 'Mother Name', 'שם אם'],
           motherPhone: ['טלפון נייד של אמא', 'נייד של אמא', 'טלפון אמא', 'נייד אמא', 'נייד הורה 1', 'טלפון הורה 1', 'נייד 1', 'Mother Phone', 'סלולרי אם'],
           motherEmail: ['דוא"ל של אמא', 'דוא"ל אמא', 'מייל אמא', 'אימייל אמא', 'Email Mother'],
-
-          // Father
           fatherName: ['שם האבא', 'שם האב', 'אבא', 'שם הורה 2', 'הורה 2', 'Father Name', 'שם אב'],
           fatherPhone: ['טלפון נייד של אבא', 'נייד של אבא', 'טלפון אבא', 'נייד אבא', 'נייד הורה 2', 'טלפון הורה 2', 'נייד 2', 'Father Phone', 'סלולרי אב'],
           fatherEmail: ['דוא"ל של אבא', 'דוא"ל אבא', 'מייל אבא', 'אימייל אבא', 'Email Father'],
-
-          // General
           teacher: ['מורה', 'שם המורה', 'דווח ע"י', 'מדווח'],
           
-          // Direct Score Columns (For Semester Files)
-          totalScore: ['סה"כ', 'ניקוד סופי', 'ציון כולל', 'סה"כ נקודות', 'Total Score', 'Total', 'סיכום', 'מאזן', 'ניקוד', 'ציון']
-        };
-
-        const isMetadataColumn = (key: string) => {
-            const cleanKey = key.trim();
-            // Check exact matches or startsWith for contacts to avoid skipping "English Class"
-            if (headersMap.ignore.includes(cleanKey)) return true;
-            if (headersMap.name.includes(cleanKey)) return true;
-            
-            // Check contact fields more strictly
-            const contactFields = [
-                ...headersMap.studentCell, ...headersMap.studentEmail, ...headersMap.homePhone,
-                ...headersMap.motherName, ...headersMap.motherPhone, ...headersMap.motherEmail,
-                ...headersMap.fatherName, ...headersMap.fatherPhone, ...headersMap.fatherEmail
-            ];
-            
-            return contactFields.some(field => cleanKey === field || cleanKey.includes(field));
+          // Expanded Total Score Keywords for Semester/Summary files
+          totalScore: [
+              'סה"כ', 'ניקוד סופי', 'ציון כולל', 'סה"כ נקודות', 'Total Score', 'Total', 
+              'סיכום', 'מאזן', 'ניקוד', 'ציון', 'ממוצע', 'לתעודה', 'מחצית', 'מצטיין'
+          ]
         };
 
         json.forEach((row: any) => {
@@ -126,7 +105,7 @@ export const parseExcel = async (file: File, config: AppConfig): Promise<Databas
             return key ? row[key] : undefined;
           };
 
-          // Identify Name
+          // --- Student Name Logic ---
           let name = "";
           const fName = getValue(headersMap.firstName);
           const lName = getValue(headersMap.lastName);
@@ -138,20 +117,18 @@ export const parseExcel = async (file: File, config: AppConfig): Promise<Databas
             if (fullName) name = String(fullName).trim();
           }
 
-          if (!name || name === "undefined") return;
+          // Skip rows without valid name
+          if (!name || name === "undefined" || name.includes("סה'כ") || name.length < 2) return;
 
-          // Init Student
           if (!db[name]) db[name] = { name, total: 0, logs: [] };
 
-          // === Contact Info ===
+          // --- Contact Info ---
           const sCell = getValue(headersMap.studentCell);
           const sEmail = getValue(headersMap.studentEmail);
           const hPhone = getValue(headersMap.homePhone);
-
           const mName = getValue(headersMap.motherName);
           const mPhone = getValue(headersMap.motherPhone);
           const mEmail = getValue(headersMap.motherEmail);
-
           const fNameVal = getValue(headersMap.fatherName);
           const fPhone = getValue(headersMap.fatherPhone);
           const fEmail = getValue(headersMap.fatherEmail);
@@ -159,26 +136,31 @@ export const parseExcel = async (file: File, config: AppConfig): Promise<Databas
           if (sCell) db[name].studentCell = String(sCell).replace(/[^0-9+]/g, '');
           if (sEmail) db[name].studentEmail = String(sEmail).trim();
           if (hPhone) db[name].homePhone = String(hPhone).replace(/[^0-9+]/g, '');
-
           if (mName) db[name].nameMother = String(mName).trim();
           if (mPhone) db[name].phoneMother = String(mPhone).replace(/[^0-9+]/g, '');
           if (mEmail) db[name].emailMother = String(mEmail).trim();
-
           if (fNameVal) db[name].nameFather = String(fNameVal).trim();
           if (fPhone) db[name].phoneFather = String(fPhone).replace(/[^0-9+]/g, '');
           if (fEmail) db[name].emailFather = String(fEmail).trim();
 
-          // === Behavior Logic ===
-          const defaultTeacherName = getValue(headersMap.teacher) || "צוות";
+          // --- Behavior / Score Logic ---
           let foundDetails = false;
+          const defaultTeacher = getValue(headersMap.teacher) || "צוות";
+
+          // Sort action keys by length desc to match specific actions first (e.g. "Specific Action" before "Action")
+          const sortedActionKeys = Object.keys(config.actionScores).sort((a, b) => b.length - a.length);
 
           Object.keys(row).forEach(key => {
-            // Skip metadata columns
-            if (isMetadataColumn(key)) return;
-            
-            // Analyze Header for Subject and Teacher (e.g., "English - Rivka")
+            // Ignore basic info columns
+            if (headersMap.name.some(alias => key.includes(alias)) || 
+                headersMap.firstName.some(alias => key.includes(alias)) ||
+                headersMap.lastName.some(alias => key.includes(alias)) ||
+                ['מס', "מס'", 'כיתה', 'שכבה', 'ת.ז'].some(x => key === x || key.trim() === x)) {
+                return;
+            }
+
             let subject = "כללי";
-            let teacher = defaultTeacherName;
+            let teacher = defaultTeacher;
 
             if (key.includes('-')) {
                 const parts = key.split('-');
@@ -188,49 +170,83 @@ export const parseExcel = async (file: File, config: AppConfig): Promise<Databas
                 subject = key.trim();
             }
 
-            // Cell Content Parsing
-            const content = String(row[key] || "");
-            
-            // Regex to match "Action Name:Count" pattern
-            // Handles Hebrew, spaces, and optional whitespace around colon
-            const regex = /([^:\d\n]+):\s*(\d+)/g;
-            
-            let match;
-            while ((match = regex.exec(content)) !== null) {
-              const rawActionType = match[1].trim();
-              const actionType = rawActionType.replace(/[\n\r]+/g, '').trim(); 
-              
-              const count = parseInt(match[2]);
-              
-              const knownAction = Object.keys(config.actionScores).find(k => actionType.includes(k));
-              
-              if (knownAction) {
-                  const baseScore = config.actionScores[knownAction];
-                  const totalActionScore = baseScore * count;
+            const val = row[key];
+            const content = String(val || "");
 
-                  db[name].logs.push({
-                    sub: subject,
-                    teach: teacher,
-                    k: knownAction,
-                    c: count,
-                    s: totalActionScore,
-                    d: new Date().toLocaleDateString('he-IL')
-                  });
-                  db[name].total += totalActionScore;
-                  foundDetails = true;
-              }
+            // Method 1: Robust Digit-Based Split
+            // Splits string into pairs of [Text][Number]
+            // Handles "Action:5", "Action: 5", "Action5", "Action:5Action:6"
+            // Captures any sequence of non-digits as the name, and the following digits as the count.
+            const regex = /([^\d]+)(\d+(\.\d+)?)/g;
+            let match;
+            let matchedInCell = false;
+
+            while ((match = regex.exec(content)) !== null) {
+                let rawAction = match[1].trim();
+                // Remove trailing separators that might have been captured (e.g. "Late:" -> "Late")
+                rawAction = rawAction.replace(/[:\-\(\)]+$/, '').trim();
+                
+                // NORMALIZE WHITESPACE: Replace multiple spaces/tabs with single space
+                // This fixes "מילה  טובה" (double space) not matching "מילה טובה" (single space)
+                rawAction = rawAction.replace(/\s+/g, ' ');
+
+                const count = parseFloat(match[2]);
+                
+                // Find matching action in config (longest match first)
+                const actionKey = sortedActionKeys.find(k => rawAction.includes(k));
+                
+                if (actionKey) {
+                    const score = config.actionScores[actionKey];
+                    const totalActionScore = score * count;
+                    
+                    db[name].logs.push({
+                        sub: subject,
+                        teach: teacher,
+                        k: actionKey,
+                        c: count,
+                        s: totalActionScore,
+                        d: new Date().toLocaleDateString('he-IL')
+                    });
+                    db[name].total += totalActionScore;
+                    matchedInCell = true;
+                    foundDetails = true;
+                }
+            }
+
+            // Method 2: Header itself is the Action name
+            if (!matchedInCell && typeof val === 'number') {
+                const actionKey = sortedActionKeys.find(k => key.includes(k));
+                if (actionKey) {
+                    const score = config.actionScores[actionKey];
+                    const totalActionScore = score * val;
+                     db[name].logs.push({
+                        sub: subject,
+                        teach: teacher,
+                        k: actionKey,
+                        c: val,
+                        s: totalActionScore,
+                        d: new Date().toLocaleDateString('he-IL')
+                    });
+                    db[name].total += totalActionScore;
+                    foundDetails = true;
+                }
             }
           });
 
-          // Method 3: Explicit Total Score Column (Fallback for Semester Files)
-          // Only if no detailed logs were found to avoid double counting, OR if total is still 0
+          // Method 3: Semester Total Fallback
           if (!foundDetails || db[name].total === 0) {
               const explicitTotal = getValue(headersMap.totalScore);
+              
               if (explicitTotal !== undefined) {
                   const parsedTotal = parseFloat(String(explicitTotal));
                   if (!isNaN(parsedTotal)) {
                       db[name].total = parsedTotal;
                   }
+              } else {
+                 const fallbackTotalKey = Object.keys(row).find(k => k.includes('סה"כ') || k.includes('ניקוד') || k.includes('ציון'));
+                 if (fallbackTotalKey && !isNaN(parseFloat(row[fallbackTotalKey]))) {
+                     db[name].total = parseFloat(row[fallbackTotalKey]);
+                 }
               }
           }
 

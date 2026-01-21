@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Database, Student, AppConfig, DEFAULT_CONFIG, ThemeType, StoreItem, Purchase, UserRole, Challenge, LearningResource, ResourceType } from './types';
 import { parseExcel, fileToBase64 } from './utils';
@@ -343,19 +344,21 @@ export default function App() {
                   if (final[name]) {
                       final[name] = {
                           ...final[name],
-                          semesterScore: studentData.total
+                          semesterScore: studentData.total,
+                          semesterLogs: studentData.logs // Save the logs from the excel into semesterLogs
                       };
                   } else {
                       final[name] = {
                           ...studentData,
                           total: 0,
                           logs: [],
-                          semesterScore: studentData.total
+                          semesterScore: studentData.total,
+                          semesterLogs: studentData.logs // Save the logs from the excel into semesterLogs
                       };
                   }
               });
               saveDb(final);
-              alert("נתוני מחצית נטענו בהצלחה!");
+              alert("נתוני מחצית נטענו בהצלחה! (כולל פירוט התנהגות)");
           } catch (err) {
               alert("שגיאה בטעינת הקובץ");
           }
@@ -916,8 +919,18 @@ function createGeneratedQuiz() {
                                 onStudentClick={(student) => { 
                                     const realStudent = db[student.name];
                                     if (realStudent) {
-                                        setSelectedStudent(realStudent); 
-                                        setDetailsFilter("");
+                                        if (podiumMode === 'semester') {
+                                             // In Semester Mode, we show historical logs
+                                             setSelectedStudent({
+                                                 ...realStudent,
+                                                 logs: realStudent.semesterLogs || [],
+                                                 total: realStudent.semesterScore || 0
+                                             });
+                                             setDetailsFilter("SEMESTER_MODE");
+                                        } else {
+                                            setSelectedStudent(realStudent); 
+                                            setDetailsFilter("");
+                                        }
                                     }
                                 }}
                             />

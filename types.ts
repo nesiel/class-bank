@@ -1,4 +1,5 @@
 
+
 export interface LogEntry {
   sub: string;
   teach: string;
@@ -37,6 +38,7 @@ export interface Student {
   
   // Semester Data
   semesterScore?: number;
+  semesterLogs?: LogEntry[]; // Detailed logs from semester import
 
   // Auth
   password?: string; // Custom PIN, default is '1234' if undefined
@@ -134,7 +136,10 @@ export const DEFAULT_SCORES: Record<string, number> = {
   'הפרעה במהלך שיעור': -1,
   'פטפוט': -1,
   'שוטטות': -1,
-  'אי השתתפות': -1
+  'אי השתתפות': -1,
+  'חוצפה': -1,
+  'סרבנות': -1,
+  'חוצפה/סרבנות': -1
 };
 
 export const DEFAULT_CONFIG: AppConfig = {
