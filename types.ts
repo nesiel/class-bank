@@ -1,5 +1,4 @@
 
-
 export interface LogEntry {
   sub: string;
   teach: string;
@@ -36,6 +35,9 @@ export interface Student {
   purchases?: Purchase[]; // Added purchases history
   lastNachatDate?: string;
   
+  // Semester Data
+  semesterScore?: number;
+
   // Auth
   password?: string; // Custom PIN, default is '1234' if undefined
 
@@ -111,28 +113,28 @@ export interface AppConfig {
 }
 
 export const DEFAULT_SCORES: Record<string, number> = {
-  // Positive
-  'מילה טובה': 10,
-  'הצטיינות': 15,
-  'שיתוף פעולה': 12,
-  'שותף במהלך השיעור': 12,
-  'עזרה לחבר': 10,
-  'יוזמה': 10,
-  'הגעה בזמן': 5,
-  'השתתפות': 5,
-  'שיעורי בית': 5,
-  'תפילה': 5,
-  'תפילת מנחה': 5,
+  // Positive (+1)
+  'מילה טובה': 1,
+  'הצטיינות': 1,
+  'שיתוף פעולה': 1,
+  'שותף במהלך השיעור': 1,
+  'עזרה לחבר': 1,
+  'יוזמה': 1,
+  'הגעה בזמן': 1,
+  'השתתפות': 1,
+  'שיעורי בית': 1,
+  'תפילה': 1,
+  'תפילת מנחה': 1,
   
-  // Negative
-  'איחור': -5,
-  'חיסור': -10,
-  'אי הבאת ציוד': -5,
-  'הפרעה': -10,
-  'הפרעה במהלך שיעור': -10,
-  'פטפוט': -5,
-  'שוטטות': -10,
-  'אי השתתפות': -5
+  // Negative (-1)
+  'איחור': -1,
+  'חיסור': -1,
+  'אי הבאת ציוד': -1,
+  'הפרעה': -1,
+  'הפרעה במהלך שיעור': -1,
+  'פטפוט': -1,
+  'שוטטות': -1,
+  'אי השתתפות': -1
 };
 
 export const DEFAULT_CONFIG: AppConfig = {

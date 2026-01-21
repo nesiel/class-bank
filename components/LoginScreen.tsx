@@ -1,6 +1,5 @@
 
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Database, Student, UserRole } from '../types';
 import { GraduationCap, Lock, ArrowRight, User, KeyRound, Coins, CheckSquare, Square, ChevronRight, BookOpen } from 'lucide-react';
 
@@ -49,6 +48,55 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ students, teacherPin, 
           setPinInput("");
       }
   };
+
+  // Enable physical keyboard input
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (view !== 'teacher' && view !== 'student-pin') return;
+
+      // Numbers
+      if (/^\d$/.test(e.key)) {
+        if (pinInput.length < 4) {
+          setPinInput(prev => prev + e.key);
+          setError("");
+        }
+      }
+      
+      // Backspace
+      if (e.key === 'Backspace') {
+        setPinInput(prev => prev.slice(0, -1));
+        setError("");
+      }
+
+      // Enter
+      if (e.key === 'Enter') {
+        if (view === 'teacher') {
+            // Need to pass current pinInput to logic if it wasn't a closure, 
+            // but since we rely on state in the closure, ensure dependencies are correct.
+            // Using logic duplication here to be safe with closure values inside useEffect 
+            // or we rely on re-bind.
+            if (pinInput === teacherPin) {
+                onLogin('teacher', undefined, rememberMe);
+            } else {
+                setError("סיסמה שגויה");
+                setPinInput("");
+            }
+        }
+        if (view === 'student-pin' && selectedStudentForLogin) {
+            const correctPassword = selectedStudentForLogin.password || '1234';
+            if (pinInput === correctPassword) {
+                onLogin('student', selectedStudentForLogin.name);
+            } else {
+                setError("סיסמה שגויה");
+                setPinInput("");
+            }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [view, pinInput, teacherPin, selectedStudentForLogin, onLogin, rememberMe]);
 
   const filteredStudents = students
     .filter(s => s.name.includes(searchStudent))
@@ -123,7 +171,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ students, teacherPin, 
                     className="w-full bg-[#2d1b15] border border-[#d4af37]/30 p-5 rounded-2xl flex items-center justify-between group hover:border-[#d4af37] transition-all active:scale-95 shadow-lg"
                 >
                     <div className="flex items-center gap-4">
-                        <div className="bg-[#d4af37]/10 p-3 rounded-full text-[#d4af37]">
+                        <div className="bg-[#d4af37]/10 p-3 rounded-full text--[#d4af37]">
                             <Lock size={24} />
                         </div>
                         <div className="text-right">
@@ -175,6 +223,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ students, teacherPin, 
                 </div>
                 <h3 className="text-xl font-bold text-white mb-6">הזן קוד מורה</h3>
                 
+                {/* Masked Display */}
                 <div className="flex justify-center gap-3 mb-6">
                     {[0, 1, 2, 3].map((i) => (
                         <div key={i} className={`w-4 h-4 rounded-full border ${pinInput.length > i ? 'bg-[#d4af37] border-[#d4af37]' : 'border-gray-600'}`}></div>
@@ -247,6 +296,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ students, teacherPin, 
                     </p>
                 </div>
                 
+                {/* Masked Display */}
                 <div className="flex justify-center gap-3 mb-6">
                     {[0, 1, 2, 3].map((i) => (
                         <div key={i} className={`w-4 h-4 rounded-full border ${pinInput.length > i ? 'bg-blue-500 border-blue-500' : 'border-gray-600'}`}></div>
