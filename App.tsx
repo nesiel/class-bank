@@ -101,7 +101,6 @@ export default function App() {
     'theme_settings'
   ]);
   const [isReordering, setIsReordering] = useState(false);
-  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // --- Initialization ---
   useEffect(() => {
@@ -248,8 +247,6 @@ export default function App() {
     setAdminCollapsed(prev => ({...prev, [id]: !prev[id]}));
   };
 
-  // ... (Keep existing helpers: Theme Logic, HandleFileUploads, updateScore, etc. unchanged)
-  // Re-inserting helpers to ensure file completeness
   const getThemeVariables = (theme: ThemeType) => {
     if (userRole === 'student') {
        return {
@@ -384,7 +381,6 @@ export default function App() {
       setNewPasswordInput("");
   };
 
-  // ... (Store Items, Challenges, Learning Center handlers - kept same)
   const handleAddStoreItem = () => {
     const newItem: StoreItem = {
       id: Date.now().toString(),
@@ -480,19 +476,39 @@ export default function App() {
       setIsGeneratingQuiz(true);
       try {
           const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-          const prompt = `Analyze the following Hebrew text and create a quiz...`; // (Full prompt in original)
-          // Simplified for brevity here as logic is same
-          const response = await ai.models.generateContent({ model: "gemini-3-flash-preview", contents: "Generate quiz JSON" }); // Placeholder
-          // In real implementation, keep original prompt logic
-          setGeneratedScript("// Generated Code"); 
+          const prompt = `
+            Analyze the following Hebrew text and create a quiz with 4-5 multiple choice questions.
+            Return ONLY a valid JSON array of objects.
+            Structure: [{ "q": "Question", "opts": ["Opt1", "Opt2"], "a": 0, "p": 20 }]
+            
+            Text: ${quizMaterial}
+          `;
+          const response = await ai.models.generateContent({ model: "gemini-3-flash-preview", contents: prompt });
+          
+          let jsonStr = response.text || "[]";
+          jsonStr = jsonStr.replace(/```json/g, '').replace(/```/g, '').trim();
+          
+          const questions = JSON.parse(jsonStr);
+          const scriptCode = `
+function createGeneratedQuiz() {
+  var form = FormApp.create('בוחן חדש (נוצר ע"י AI)');
+  form.setIsQuiz(true);
+  form.addTextItem().setTitle('שם התלמיד').setRequired(true);
+  var questions = ${JSON.stringify(questions)};
+  questions.forEach(function(q) {
+    var item = form.addMultipleChoiceItem();
+    var choices = q.opts.map(function(opt, index) { return item.createChoice(opt, index === q.a); });
+    item.setTitle(q.q).setPoints(q.p).setChoices(choices);
+  });
+  Logger.log('Form URL: ' + form.getPublishedUrl());
+}`;
+          setGeneratedScript(scriptCode);
           setQuizMaterial("");
-      } catch (e) { console.error(e); alert("שגיאה ביצירת הבוחן. נסה שנית."); } finally { setIsGeneratingQuiz(false); }
+      } catch (e) { console.error(e); alert("שגיאה ביצירת הבוחן."); } finally { setIsGeneratingQuiz(false); }
   };
 
-  // --- Cloud Sync Logic (Same) ---
+  // --- Cloud Sync Logic ---
   const handleCloudSave = async (isAuto = false) => {
-    // ... (Same logic)
-    // To save chars, omitting full repeat but logic is critical
     const url = config.googleAppsScriptUrl;
     if (!url) { if (!isAuto) alert("יש להגדיר כתובת סקריפט Google Apps Script"); return; }
     setIsSyncing(true); setSyncStatus('saving');
@@ -542,19 +558,102 @@ export default function App() {
   };
 
   const handleGenerateProductAsset = async (item: StoreItem) => {
-    // ... (Same logic)
     setGeneratingItemId(item.id);
-    // ... AI Logic omitted for brevity, same as before
-    setGeneratingItemId(null);
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        if (!item.name.trim()) {
+            const nameResponse = await ai.models.generateContent({
+                model: 'gemini-3-flash-preview',
+                contents: "Suggest ONE popular, small, physical prize for a 5th grade classroom store (in Hebrew). Just the name.",
+            });
+            const suggestedName = nameResponse.text?.trim() || "הפתעה";
+            handleUpdateStoreItem(item.id, 'name', suggestedName);
+            item.name = suggestedName; 
+        }
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-image',
+            contents: `Generate a cute, high-quality, 3D icon of ${item.name} (product) on a plain white background. It should look like a game asset.`,
+        });
+
+        const parts = response.candidates?.[0]?.content?.parts;
+        if (parts) {
+             for (const part of parts) {
+                if (part.inlineData) {
+                    const base64 = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+                    handleUpdateStoreItem(item.id, 'image', base64);
+                    break;
+                }
+             }
+        }
+    } catch (e) {
+        console.error(e);
+        alert("שגיאה בייצור אוטומטי. ודא חיבור לרשת.");
+    } finally {
+        setGeneratingItemId(null);
+    }
   };
 
   const handleCheckout = () => {
-    // ... (Same logic)
+    const checkoutStudentId = userRole === 'student' ? loggedInStudentName : storeSelectedStudentId;
+    if (!checkoutStudentId || cart.length === 0) return;
+    
+    const student = db[checkoutStudentId];
+    if (!student) return;
+
+    let totalCost = 0;
+    cart.forEach(item => totalCost += item.price);
+
+    if (student.total < totalCost) {
+        alert("שגיאה: אין מספיק נקודות לביצוע העסקה.");
+        return;
+    }
+
+    const newPurchases: Purchase[] = cart.map(item => ({
+        id: Math.random().toString(36).substr(2, 9),
+        itemId: item.id,
+        itemName: item.name,
+        cost: item.price,
+        date: new Date().toLocaleDateString('he-IL'),
+        timestamp: Date.now()
+    }));
+
+    const updatedStudent: Student = {
+        ...student,
+        total: student.total - totalCost,
+        purchases: [...(student.purchases || []), ...newPurchases]
+    };
+
+    saveDb({ ...db, [student.name]: updatedStudent });
+
+    const updatedStoreItems = config.storeItems.map(storeItem => {
+        const countInCart = cart.filter(c => c.id === storeItem.id).length;
+        if (countInCart > 0) {
+            return { ...storeItem, stock: Math.max(0, storeItem.stock - countInCart) };
+        }
+        return storeItem;
+    });
+
+    saveConfig({ ...config, storeItems: updatedStoreItems });
+    setCart([]);
     return true; 
   };
 
   const handleBackup = () => {
-    // ... (Same logic)
+    try {
+      const data = JSON.stringify({ db, config });
+      const blob = new Blob([data], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `backup_${new Date().toLocaleDateString('he-IL').replace(/\./g, '-')}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert("שגיאה ביצירת הגיבוי");
+    }
   };
 
   const handleRemoveFromPodium = (studentName: string) => {
@@ -638,14 +737,95 @@ export default function App() {
       if (allFirstPlaces.length > 3) { tefillahChampions = allFirstPlaces; } else { tefillahChampions = tefillahChampions.slice(0, 3); }
   }
 
-  // --- Render Admin Content (Same) ---
+  // --- Render Admin Content ---
   const renderAdminSectionContent = (id: string) => {
-      // ... (Keeping exact same admin render logic, truncated for brevity in update, assume full code here)
-      // Since I am updating App.tsx entirely, I will include the switch case block.
       switch(id) {
-        case 'cloud_sync': return (/*...*/ <div className="space-y-4 pt-2"><p className="text-xs text-gray-400">סנכרון הנתונים...</p><div className="flex gap-3"><button onClick={() => handleCloudSave(false)} className="flex-1 py-3 bg-sky-600 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2">שמור כעת</button><button onClick={() => handleCloudLoad(false)} className="flex-1 py-3 bg-white/5 text-white rounded-xl text-xs font-bold border border-white/10 flex items-center justify-center gap-2">טען כעת</button></div></div>);
-        case 'import_files': return (<div className="grid grid-cols-2 gap-3 pt-2"><label className="flex flex-col items-center justify-center p-4 bg-green-500/10 border border-green-500/20 rounded-xl cursor-pointer"><FileSpreadsheet className="text-green-500 mb-2" size={24} /><span className="text-xs font-bold text-green-500">דיווחי התנהגות</span><input type="file" className="hidden" accept=".xlsx, .xls" onChange={(e) => handleFileUpload(e, 'behavior')} /></label><label className="flex flex-col items-center justify-center p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl cursor-pointer"><UserPlus className="text-blue-500 mb-2" size={24} /><span className="text-xs font-bold text-blue-500">אלפון כיתתי</span><input type="file" className="hidden" accept=".xlsx, .xls" onChange={(e) => handleFileUpload(e, 'alfon')} /></label><label className="col-span-2 flex items-center justify-center gap-2 p-4 bg-purple-500/10 border border-purple-500/20 rounded-xl cursor-pointer"><Crown className="text-purple-500 mb-0" size={24} /><span className="text-xs font-bold text-purple-500">טעינת מצטייני מחצית (אקסל)</span><input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleSemesterFileUpload} /></label><button onClick={() => setShowBatchCommenter(true)} className="col-span-2 flex items-center justify-center gap-2 p-4 bg-[#d4af37]/10 border border-[#d4af37]/20 rounded-xl"><GraduationCap className="text-[#d4af37] mb-0" size={24} /><span className="text-xs font-bold text-[#d4af37]">מחולל הערות לתעודה (AI)</span></button></div>);
-        // ... other cases
+        case 'cloud_sync': return (
+            <div className="space-y-4 pt-2">
+                <p className="text-xs text-gray-400">סנכרון הנתונים ל-Google Sheets מאפשר גיבוי בענן ושיתוף בין מכשירים. המערכת מבצעת שמירה אוטומטית ברקע.</p>
+                <div className="bg-black/20 p-3 rounded-xl border border-border">
+                    <label className="text-[10px] text-gray-400 block mb-1">כתובת ה-Web App של הסקריפט</label>
+                    <input type="text" value={config.googleAppsScriptUrl || ""} onChange={(e) => saveConfig({...config, googleAppsScriptUrl: e.target.value})} className="bg-transparent border-b border-accent/30 w-full text-xs text-white outline-none" placeholder="https://script.google.com/macros/s/..." />
+                </div>
+                <button onClick={() => setIncludeImagesInSync(!includeImagesInSync)} className="flex items-center gap-2 p-2 rounded-lg bg-black/10 border border-white/5 w-full text-xs hover:bg-black/20">
+                    {includeImagesInSync ? <CheckSquare size={16} className="text-accent" /> : <Square size={16} className="text-gray-500" />}<span className="text-white">כלול תמונות בגיבוי (עלול להיות איטי)</span>
+                </button>
+                <div className="flex gap-3">
+                     <button onClick={() => handleCloudSave(false)} disabled={isSyncing} className="flex-1 py-3 bg-sky-600 hover:bg-sky-500 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition disabled:opacity-50">{isSyncing ? <RefreshCw size={14} className="animate-spin"/> : <Upload size={14} />} שמור כעת</button>
+                     <button onClick={() => handleCloudLoad(false)} disabled={isSyncing} className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition disabled:opacity-50 border border-white/10">{isSyncing ? <RefreshCw size={14} className="animate-spin"/> : <Download size={14} />} טען כעת</button>
+                </div>
+            </div>
+        );
+        case 'import_files': return (
+            <div className="grid grid-cols-2 gap-3 pt-2">
+                <label className="flex flex-col items-center justify-center p-4 bg-green-500/10 border border-green-500/20 rounded-xl cursor-pointer active:scale-95 transition"><FileSpreadsheet className="text-green-500 mb-2" size={24} /><span className="text-xs font-bold text-green-500">דיווחי התנהגות</span><input type="file" className="hidden" accept=".xlsx, .xls" onChange={(e) => handleFileUpload(e, 'behavior')} /></label>
+                <label className="flex flex-col items-center justify-center p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl cursor-pointer active:scale-95 transition"><UserPlus className="text-blue-500 mb-2" size={24} /><span className="text-xs font-bold text-blue-500">אלפון כיתתי</span><input type="file" className="hidden" accept=".xlsx, .xls" onChange={(e) => handleFileUpload(e, 'alfon')} /></label>
+                <label className="col-span-2 flex items-center justify-center gap-2 p-4 bg-purple-500/10 border border-purple-500/20 rounded-xl cursor-pointer active:scale-95 transition"><Crown className="text-purple-500 mb-0" size={24} /><span className="text-xs font-bold text-purple-500">טעינת מצטייני מחצית (אקסל)</span><input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleSemesterFileUpload} /></label>
+                <button onClick={() => setShowBatchCommenter(true)} className="col-span-2 flex items-center justify-center gap-2 p-4 bg-[#d4af37]/10 border border-[#d4af37]/20 rounded-xl active:scale-95 transition"><GraduationCap className="text-[#d4af37] mb-0" size={24} /><span className="text-xs font-bold text-[#d4af37]">מחולל הערות לתעודה (AI)</span></button>
+                <div className="col-span-2 bg-black/20 p-3 rounded-xl border border-border mt-2"><label className="text-[10px] text-gray-400 block mb-1">קוד כניסה למורה</label><input type="text" value={config.teacherPin} onChange={(e) => saveConfig({...config, teacherPin: e.target.value})} className="bg-transparent border-b border-accent/30 w-full text-sm font-bold text-accent outline-none text-center" placeholder="1234" /></div>
+            </div>
+        );
+        case 'learning_manage': return (
+            <div className="space-y-4 pt-2">
+                <div className="bg-[#d4af37]/10 border border-[#d4af37]/20 p-3 rounded-xl space-y-2">
+                    <h4 className="text-xs font-bold text-[#d4af37] flex items-center gap-1"><Wand2 size={12}/> מחולל בחנים (AI)</h4>
+                    <textarea className="w-full h-20 bg-black/20 border border-white/10 rounded-lg p-2 text-xs text-white outline-none resize-none placeholder-gray-500" placeholder="הדבק כאן את חומר הלימוד..." value={quizMaterial} onChange={(e) => setQuizMaterial(e.target.value)} />
+                    <button onClick={handleGenerateQuizScript} disabled={isGeneratingQuiz || !quizMaterial} className="w-full py-2 bg-[#d4af37] text-black font-bold text-xs rounded-lg flex items-center justify-center gap-2 disabled:opacity-50 hover:opacity-90 transition">{isGeneratingQuiz ? <Loader2 size={14} className="animate-spin"/> : <FileQuestion size={14}/>} צור סקריפט לבוחן</button>
+                </div>
+                <div className="border-t border-border my-2"></div>
+                <div className="flex gap-2 bg-black/20 p-2 rounded-xl border border-white/5"><input type="text" className="flex-1 bg-transparent border-none text-xs text-white outline-none px-2" placeholder="שם מקצוע/תיקייה חדשה..." value={newSubjectName} onChange={(e) => setNewSubjectName(e.target.value)} /><button onClick={handleAddSubject} className="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded-lg font-bold">הוסף</button></div>
+                <div className="flex flex-wrap gap-2">{(config.learningSubjects || []).map(s => (<div key={s} className="flex items-center gap-1 bg-emerald-500/10 text-emerald-500 px-2 py-1 rounded-full text-xs border border-emerald-500/20"><span>{s}</span><button onClick={() => handleDeleteSubject(s)} className="hover:text-red-400"><X size={12}/></button></div>))}</div>
+                <div className="border-t border-border my-2"></div>
+                <div className="space-y-3 bg-black/10 p-3 rounded-xl border border-white/5">
+                    <div className="flex justify-between items-center"><h4 className="text-xs font-bold text-gray-400">הוספת חומר לימוד</h4><div className="flex gap-1"><button onClick={() => setPresetResource('drive')} className="p-1 bg-blue-500/20 text-blue-400 rounded hover:bg-blue-500/30 text-[10px] flex items-center gap-1"><HardDrive size={10}/> דרייב</button><button onClick={() => setPresetResource('quiz')} className="p-1 bg-purple-500/20 text-purple-400 rounded hover:bg-purple-500/30 text-[10px] flex items-center gap-1"><FileQuestion size={10}/> בוחן</button><button onClick={() => setPresetResource('review')} className="p-1 bg-indigo-500/20 text-indigo-400 rounded hover:bg-indigo-500/30 text-[10px] flex items-center gap-1"><FileText size={10}/> חזרה</button></div></div>
+                    <input type="text" placeholder="כותרת" className="w-full bg-black/20 border border-white/10 rounded-lg p-2 text-xs text-white outline-none" value={newResource.title} onChange={(e) => setNewResource({...newResource, title: e.target.value})} />
+                    <div className="flex gap-2"><select className="bg-black/20 border border-white/10 rounded-lg p-2 text-xs text-white outline-none flex-1" value={newResource.subject} onChange={(e) => setNewResource({...newResource, subject: e.target.value})}><option value="">בחר מקצוע...</option>{(config.learningSubjects || []).map(s => <option key={s} value={s}>{s}</option>)}</select><select className="bg-black/20 border border-white/10 rounded-lg p-2 text-xs text-white outline-none flex-1" value={newResource.type} onChange={(e) => setNewResource({...newResource, type: e.target.value as ResourceType})}><option value="link">קישור / דרייב / Forms</option><option value="file">קובץ להורדה</option><option value="video">סרטון</option></select></div>
+                    {newResource.type === 'file' ? (<input type="file" onChange={handleResourceFileUpload} className="text-xs text-gray-400"/>) : (<input type="text" placeholder="כתובת URL" className="w-full bg-black/20 border border-white/10 rounded-lg p-2 text-xs text-white outline-none" value={newResource.url} onChange={(e) => setNewResource({...newResource, url: e.target.value})} />)}
+                    <button onClick={handleAddResource} className="w-full bg-emerald-600 text-white font-bold py-2 rounded-lg text-xs hover:bg-emerald-500 transition">שמור חומר לימוד</button>
+                </div>
+                <div className="max-h-40 overflow-y-auto pr-1 space-y-2">{(config.learningResources || []).map(res => (<div key={res.id} className="flex justify-between items-center bg-white/5 p-2 rounded-lg border border-white/5 text-xs"><div className="truncate flex-1 flex items-center gap-2">{res.url.includes('drive') && <HardDrive size={12} className="text-blue-500"/>}{res.url.includes('forms') && <FileQuestion size={12} className="text-purple-500"/>}<span className="text-emerald-400 font-bold">{res.subject}:</span> {res.title}</div><button onClick={() => handleDeleteResource(res.id)} className="text-red-500/50 hover:text-red-500"><Trash2 size={14}/></button></div>))}</div>
+            </div>
+        );
+        case 'challenges_manage': return (
+            <div className="space-y-4 pt-2">
+                <div className="flex justify-between items-center border-b border-border pb-2"><span className="text-xs text-gray-400">אתגרים פעילים: {(config.challenges || []).length}</span><button onClick={handleAddChallenge} className="text-xs bg-orange-500 text-white px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 hover:brightness-110"><Plus size={14}/> הוסף אתגר</button></div>
+                <div className="space-y-3">
+                    {(config.challenges || []).length === 0 && <p className="text-gray-500 text-xs text-center py-2">אין אתגרים מוגדרים</p>}
+                    {(config.challenges || []).map(challenge => (
+                        <div key={challenge.id} className="flex gap-2 bg-black/20 p-2 rounded-xl border border-white/5 items-center">
+                            <Target size={20} className="text-orange-500 shrink-0" />
+                            <div className="flex-1 space-y-1"><input type="text" className="w-full bg-transparent border-b border-white/10 text-sm font-bold text-txt outline-none focus:border-orange-500" placeholder="שם האתגר" value={challenge.title} onChange={(e) => handleUpdateChallenge(challenge.id, 'title', e.target.value)} /></div>
+                            <div className="flex items-center gap-1 bg-black/30 px-2 py-1 rounded"><span className="text-[10px] text-gray-500">ניקוד:</span><input type="number" className="w-10 bg-transparent text-xs text-orange-400 font-bold outline-none text-center" value={challenge.reward} onChange={(e) => handleUpdateChallenge(challenge.id, 'reward', parseInt(e.target.value) || 0)} /></div>
+                            <button onClick={() => handleDeleteChallenge(challenge.id)} className="text-red-500/50 hover:text-red-500 p-2"><Trash2 size={16}/></button>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+        case 'store_manage': return (
+             <div className="space-y-4 pt-2">
+                <div className="flex justify-between items-center border-b border-border pb-2"><span className="text-xs text-gray-400">מוצרים: {config.storeItems.length}</span><button onClick={handleAddStoreItem} className="text-xs bg-accent text-accent-fg px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 hover:brightness-110"><Plus size={14}/> הוסף מוצר</button></div>
+                <div className="grid grid-cols-1 gap-3 max-h-80 overflow-y-auto pr-1">
+                    {config.storeItems.map((item) => (
+                        <div key={item.id} className="bg-black/20 p-3 rounded-xl border border-border flex items-center gap-3">
+                            <div className="relative group shrink-0"><label className="w-14 h-14 bg-black/40 rounded-lg flex items-center justify-center cursor-pointer border border-white/10 hover:border-accent transition overflow-hidden">{item.image ? (<img src={item.image} className="w-full h-full object-cover" />) : (<span className="text-2xl">{item.emoji}</span>)}<div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><ImageIcon size={16} className="text-white"/></div><input type="file" className="hidden" accept="image/*" onChange={(e) => handleStoreItemImageUpload(e, item.id)} /></label></div>
+                            <div className="flex-1 space-y-2 min-w-0"><div className="flex gap-2"><input value={item.name} onChange={(e) => handleUpdateStoreItem(item.id, 'name', e.target.value)} className="w-full bg-transparent border-b border-white/10 text-sm font-bold text-txt outline-none focus:border-accent" placeholder="שם הפריט" /><button onClick={() => handleGenerateProductAsset(item)} disabled={generatingItemId === item.id} className="text-accent hover:text-white transition-colors bg-accent/10 hover:bg-accent/20 p-1.5 rounded-lg">{generatingItemId === item.id ? <Loader2 size={16} className="animate-spin"/> : <Wand2 size={16}/>}</button></div><div className="flex items-center gap-2"><div className="flex items-center gap-1 bg-black/30 px-2 py-1 rounded"><span className="text-[10px] text-gray-500">מחיר:</span><input type="number" value={item.price} onChange={(e) => handleUpdateStoreItem(item.id, 'price', parseInt(e.target.value) || 0)} className="w-12 bg-transparent text-xs text-accent font-bold outline-none focus:border-accent text-center" placeholder="0" /></div><div className="flex items-center gap-1 bg-black/30 px-2 py-1 rounded"><span className="text-[10px] text-gray-500">מלאי:</span><input type="number" value={item.stock} onChange={(e) => handleUpdateStoreItem(item.id, 'stock', parseInt(e.target.value) || 0)} className="w-10 bg-transparent text-xs text-white font-bold outline-none focus:border-accent text-center" placeholder="∞" /></div></div></div>
+                            <button onClick={() => handleDeleteStoreItem(item.id)} className="p-2 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500/20 shrink-0"><Trash2 size={16} /></button>
+                        </div>
+                    ))}
+                </div>
+                <div className="pt-4 border-t border-border"><h4 className="text-xs font-bold text-gray-400 mb-2">היסטוריית רכישות חודשית</h4><div className="bg-black/20 rounded-xl p-2 max-h-40 overflow-y-auto text-xs">{allPurchases.length === 0 && <p className="text-center text-gray-500 py-2">אין רכישות עדיין</p>}{allPurchases.map((p, i) => (<div key={i} className="flex justify-between items-center py-1.5 border-b border-white/5 last:border-0"><span>{p.studentName} רכש/ה <b>{p.itemName}</b></span><span className="text-gray-500 text-[10px]">{p.date}</span></div>))}</div></div>
+             </div>
+        );
+        case 'score_settings': return (
+            <div className="grid grid-cols-2 gap-3 pt-2">{Object.entries(config.actionScores).map(([action, score]) => (<div key={action} className="bg-black/20 p-3 rounded-xl border border-border"><label className="text-[10px] text-gray-400 block mb-1">{action}</label><input type="number" className="bg-transparent border-b border-accent/30 w-full text-sm font-bold text-accent outline-none text-center" value={score} onChange={(e) => updateScore(action, parseInt(e.target.value) || 0)} /></div>))}</div>
+        );
+        case 'rules_manage': return (<div className="pt-2"><textarea className="w-full h-32 bg-black/20 rounded-xl border border-white/10 p-4 text-sm text-txt/80 focus:border-accent outline-none resize-none" value={config.rules} onChange={(e) => saveConfig({...config, rules: e.target.value})} placeholder="הדבק כאן את התקנון הכיתתי..." /></div>);
+        case 'general_settings': return (
+            <div className="pt-2 space-y-3"><div className="bg-black/20 p-3 rounded-xl border border-border"><label className="text-xs font-bold text-gray-400 block mb-1 flex items-center gap-2"><Phone size={12}/> טלפון המורה (לקבלת עדכוני רכישה)</label><input type="tel" placeholder="לדוגמה: 0501234567" className="w-full bg-transparent border-b border-white/10 p-1 text-sm text-white outline-none focus:border-accent" value={config.teacherCell} onChange={(e) => saveConfig({...config, teacherCell: e.target.value})} /><p className="text-[10px] text-gray-500 mt-1">מספר זה ישמש לשליחת וואטסאפ אוטומטי של רכישות</p></div></div>
+        );
+        case 'backup_reset': return (<div className="grid grid-cols-2 gap-3 pt-2"><button onClick={handleBackup} className="flex items-center justify-center gap-2 p-4 bg-white/5 rounded-2xl text-xs font-bold border border-white/5 active:bg-white/10 transition-colors text-txt"><Download size={16}/> גיבוי</button><button onClick={() => setShowResetConfirm(true)} className="flex items-center justify-center gap-2 p-4 bg-red-500/10 rounded-2xl text-xs font-bold text-red-500 border border-red-500/10 active:bg-red-500/20 transition-colors"><Trash2 size={16}/> איפוס מלא</button></div>);
+        case 'theme_settings': return (<div className="flex gap-2 pt-2">{['current', 'modern', 'simple'].map((t) => (<button key={t} onClick={() => saveConfig({ ...config, theme: t as ThemeType })} className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all border ${config.theme === t ? 'bg-accent text-accent-fg border-accent shadow-lg scale-105' : 'bg-black/20 text-gray-400 border-transparent hover:bg-black/30'}`}>{t === 'current' ? 'נוכחי' : t === 'modern' ? 'מודרני' : 'פשוט'}</button>))}</div>);
         default: return null;
       }
   };
@@ -687,10 +867,17 @@ export default function App() {
                               <div className="flex justify-between items-end relative z-10"><div><span className="text-[10px] text-gray-400 block mb-1">היתרה שלך</span><span className="text-4xl font-black text-blue-400 tracking-tight">{db[loggedInStudentName].total}₪</span></div><div className="bg-blue-500/10 p-3 rounded-full text-blue-400 border border-blue-500/20"><Trophy size={24} /></div></div>
                           </div>
                           {/* ... other student widgets */}
+                          {(config.challenges || []).length > 0 && (
+                              <div className="space-y-2">
+                                  <h3 className="text-sm font-bold text-gray-400 pr-2 flex items-center gap-2"><Target size={16} className="text-orange-500"/> אתגרים פעילים</h3>
+                                  <div className="flex gap-3 overflow-x-auto pb-2 px-1 no-scrollbar">{config.challenges.map(challenge => (<div key={challenge.id} className="min-w-[140px] bg-gradient-to-br from-orange-500/20 to-red-500/10 border border-orange-500/30 p-3 rounded-2xl flex flex-col justify-between items-start shadow-sm"><span className="text-xs font-bold text-white line-clamp-2 h-8">{challenge.title}</span><span className="text-lg font-black text-orange-400">+{challenge.reward}</span></div>))}</div>
+                              </div>
+                          )}
                           <div className="grid grid-cols-2 gap-3">
                               <button onClick={() => setCurrentView('store')} className="p-4 bg-accent/10 border border-accent/20 rounded-2xl flex flex-col items-center justify-center gap-2 active:scale-95 transition"><Store size={24} className="text-accent" /><span className="text-xs font-bold text-accent">לחנות ההפתעות</span></button>
                               <button onClick={() => setCurrentView('learning')} className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex flex-col items-center justify-center gap-2 active:scale-95 transition"><BookOpen size={24} className="text-emerald-500" /><span className="text-xs font-bold text-emerald-400">מרכז למידה</span></button>
                           </div>
+                          <div className="space-y-3"><h3 className="text-sm font-bold text-gray-400 pr-2">היסטוריית פעולות</h3>{db[loggedInStudentName].logs.length === 0 ? (<div className="text-center py-8 text-gray-500 text-xs">עדיין אין נתונים להצגה</div>) : (db[loggedInStudentName].logs.slice().reverse().slice(0, 10).map((log, idx) => (<div key={idx} className="bg-card p-4 rounded-2xl border border-border flex justify-between items-center shadow-sm"><div className="flex items-center gap-3"><div className={`p-2 rounded-full ${log.s > 0 ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>{log.s > 0 ? <Plus size={14}/> : <MinusCircle size={14}/>}</div><div><p className="font-bold text-sm text-txt">{log.k}</p><p className="text-[10px] text-gray-500">{log.d} • {log.sub}</p></div></div><span className={`font-black ${log.s > 0 ? 'text-green-500' : 'text-red-500'}`}>{log.s > 0 ? '+' : ''}{log.s}</span></div>)))}</div>
                       </div>
                   )}
               </div>
@@ -783,8 +970,6 @@ export default function App() {
                             <div className="flex items-center gap-3"><div className="bg-accent/10 p-2.5 rounded-full text-accent"><Book size={20} /></div><span className="font-bold text-sm text-txt">תקנון הכיתה</span></div>
                             <ChevronDown size={16} className="text-gray-500"/>
                         </button>
-                        
-                        {/* DELETED THE DUPLICATE SCORE TABLE HERE */}
 
                         </div>
                     )}

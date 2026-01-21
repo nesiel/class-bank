@@ -3,7 +3,6 @@ import { Database, Student, LogEntry, AppConfig } from './types';
 import * as XLSX from 'xlsx';
 
 // Helper to compress images before saving to LocalStorage
-// This prevents the "QuotaExceededError" and keeps the app fast.
 export const compressImage = (file: File, maxWidth = 300, quality = 0.7): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -37,12 +36,10 @@ export const compressImage = (file: File, maxWidth = 300, quality = 0.7): Promis
 };
 
 export const fileToBase64 = (file: File): Promise<string> => {
-  // We now route through the compressor by default for safer storage
   if (file.type.startsWith('image/')) {
       return compressImage(file);
   }
   
-  // Fallback for non-image files (though not used currently)
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
@@ -59,23 +56,19 @@ export const parseExcel = async (file: File, config: AppConfig): Promise<Databas
         const data = new Uint8Array(e.target?.result as ArrayBuffer);
         const workbook = XLSX.read(data, { type: 'array' });
         
-        // Find the first sheet with actual data (sometimes the first sheet is empty or just instructions)
         const sheetName = workbook.SheetNames[0];
         const sheet = workbook.Sheets[sheetName];
         
-        // Convert to JSON with raw headers first to find the "real" header row
         const rawJson = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
         
-        // Find the row index that contains "Shem Talmid" or similar
         let headerRowIndex = 0;
         rawJson.forEach((row, index) => {
             const rowStr = row.join(' ');
-            if (rowStr.includes('שם התלמיד') || rowStr.includes('שם פרטי')) {
+            if (rowStr.includes('שם התלמיד') || rowStr.includes('שם פרטי') || rowStr.includes('שם משפחה')) {
                 headerRowIndex = index;
             }
         });
 
-        // Re-parse with the correct header row
         const json = XLSX.utils.sheet_to_json(sheet, { range: headerRowIndex }) as any[];
         
         const db: Database = {};
@@ -102,7 +95,10 @@ export const parseExcel = async (file: File, config: AppConfig): Promise<Databas
           fatherEmail: ['דוא"ל של אבא', 'דוא"ל אבא', 'מייל אבא', 'אימייל אבא', 'Email Father'],
 
           // General
-          teacher: ['מורה', 'שם המורה', 'דווח ע"י', 'מדווח']
+          teacher: ['מורה', 'שם המורה', 'דווח ע"י', 'מדווח'],
+          
+          // Direct Score Columns (For Semester Files)
+          totalScore: ['סה"כ', 'ניקוד סופי', 'ציון כולל', 'סה"כ נקודות', 'Total Score', 'Total', 'סיכום', 'מאזן', 'ניקוד', 'ציון']
         };
 
         json.forEach((row: any) => {
@@ -155,8 +151,9 @@ export const parseExcel = async (file: File, config: AppConfig): Promise<Databas
 
           // === Behavior Logic ===
           const teacherName = getValue(headersMap.teacher) || "צוות";
+          let foundDetails = false;
 
-          // Method 1: Explicit Columns
+          // Method 1: Explicit Columns (Config based)
           Object.keys(row).forEach(header => {
             const cleanHeader = header.trim().replace(/\s+/g, ' '); 
             
@@ -179,6 +176,7 @@ export const parseExcel = async (file: File, config: AppConfig): Promise<Databas
                    d: new Date().toLocaleDateString('he-IL')
                  });
                  db[name].total += totalScore;
+                 foundDetails = true;
               }
             }
           });
@@ -226,9 +224,23 @@ export const parseExcel = async (file: File, config: AppConfig): Promise<Databas
                     d: new Date().toLocaleDateString('he-IL')
                   });
                   db[name].total += totalActionScore;
+                  foundDetails = true;
               }
             }
           });
+
+          // Method 3: Explicit Total Score Column (Fallback for Semester Files)
+          // Only if no detailed logs were found to avoid double counting, OR if total is still 0
+          if (!foundDetails || db[name].total === 0) {
+              const explicitTotal = getValue(headersMap.totalScore);
+              if (explicitTotal !== undefined) {
+                  const parsedTotal = parseFloat(String(explicitTotal));
+                  if (!isNaN(parsedTotal)) {
+                      db[name].total = parsedTotal;
+                  }
+              }
+          }
+
         });
         resolve(db);
       } catch (err) { reject(err); }
