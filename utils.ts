@@ -64,7 +64,7 @@ export const parseExcel = async (file: File, config: AppConfig): Promise<Databas
         let headerRowIndex = 0;
         rawJson.forEach((row, index) => {
             const rowStr = row.join(' ');
-            if (rowStr.includes('שם התלמיד') || rowStr.includes('שם פרטי') || rowStr.includes('שם משפחה')) {
+            if (rowStr.includes('שם התלמיד') || rowStr.includes('שם פרטי') && rowStr.includes('שם משפחה')) {
                 headerRowIndex = index;
             }
         });
@@ -79,6 +79,9 @@ export const parseExcel = async (file: File, config: AppConfig): Promise<Databas
           lastName: ['שם משפחה', 'משפחה'],
           firstName: ['שם פרטי', 'פרטי'],
           
+          // Metadata columns to ignore when parsing scores
+          ignore: ['מס', "מס'", 'שכבה', 'כיתה', 'ת.ז', 'תעודת זהות', 'מגדר', 'מין'],
+
           // Student Contact
           studentCell: ['סלולרי של התלמיד', 'נייד תלמיד', 'טלפון תלמיד', 'פלאפון תלמיד', 'נייד של התלמיד'],
           studentEmail: ['מייל תלמיד', 'דוא"ל תלמיד', 'אימייל תלמיד', 'Student Email'],
@@ -99,6 +102,22 @@ export const parseExcel = async (file: File, config: AppConfig): Promise<Databas
           
           // Direct Score Columns (For Semester Files)
           totalScore: ['סה"כ', 'ניקוד סופי', 'ציון כולל', 'סה"כ נקודות', 'Total Score', 'Total', 'סיכום', 'מאזן', 'ניקוד', 'ציון']
+        };
+
+        const isMetadataColumn = (key: string) => {
+            const cleanKey = key.trim();
+            // Check exact matches or startsWith for contacts to avoid skipping "English Class"
+            if (headersMap.ignore.includes(cleanKey)) return true;
+            if (headersMap.name.includes(cleanKey)) return true;
+            
+            // Check contact fields more strictly
+            const contactFields = [
+                ...headersMap.studentCell, ...headersMap.studentEmail, ...headersMap.homePhone,
+                ...headersMap.motherName, ...headersMap.motherPhone, ...headersMap.motherEmail,
+                ...headersMap.fatherName, ...headersMap.fatherPhone, ...headersMap.fatherEmail
+            ];
+            
+            return contactFields.some(field => cleanKey === field || cleanKey.includes(field));
         };
 
         json.forEach((row: any) => {
@@ -150,48 +169,36 @@ export const parseExcel = async (file: File, config: AppConfig): Promise<Databas
           if (fEmail) db[name].emailFather = String(fEmail).trim();
 
           // === Behavior Logic ===
-          const teacherName = getValue(headersMap.teacher) || "צוות";
+          const defaultTeacherName = getValue(headersMap.teacher) || "צוות";
           let foundDetails = false;
 
-          // Method 1: Explicit Columns (Config based)
-          Object.keys(row).forEach(header => {
-            const cleanHeader = header.trim().replace(/\s+/g, ' '); 
-            
-            const matchedAction = Object.keys(config.actionScores).find(action => 
-              cleanHeader === action || cleanHeader.includes(action)
-            );
-
-            if (matchedAction) {
-              const val = row[header];
-              if (typeof val === 'number' && val > 0) {
-                 const scorePerAction = config.actionScores[matchedAction];
-                 const totalScore = scorePerAction * val;
-                 
-                 db[name].logs.push({
-                   sub: "ייבוא מאקסל",
-                   teach: teacherName,
-                   k: matchedAction,
-                   c: val,
-                   s: totalScore,
-                   d: new Date().toLocaleDateString('he-IL')
-                 });
-                 db[name].total += totalScore;
-                 foundDetails = true;
-              }
-            }
-          });
-
-          // Method 2: Text parsing within cells
           Object.keys(row).forEach(key => {
-            if (headersMap.name.some(h => key.includes(h)) || key.includes('שם') || key.includes('כיתה') || key.includes('שכבה') || key === "מס'") return;
+            // Skip metadata columns
+            if (isMetadataColumn(key)) return;
             
+            // Analyze Header for Subject and Teacher (e.g., "English - Rivka")
+            let subject = "כללי";
+            let teacher = defaultTeacherName;
+
+            if (key.includes('-')) {
+                const parts = key.split('-');
+                subject = parts[0].trim();
+                if (parts.length > 1) teacher = parts[1].trim();
+            } else {
+                subject = key.trim();
+            }
+
+            // Cell Content Parsing
             const content = String(row[key] || "");
-            const regex = /([^:0-9,]+):\s*(\d+)/g;
+            
+            // Regex to match "Action Name:Count" pattern
+            // Handles Hebrew, spaces, and optional whitespace around colon
+            const regex = /([^:\d\n]+):\s*(\d+)/g;
             
             let match;
             while ((match = regex.exec(content)) !== null) {
               const rawActionType = match[1].trim();
-              const actionType = rawActionType.replace(/\s+/g, ' '); 
+              const actionType = rawActionType.replace(/[\n\r]+/g, '').trim(); 
               
               const count = parseInt(match[2]);
               
@@ -200,20 +207,6 @@ export const parseExcel = async (file: File, config: AppConfig): Promise<Databas
               if (knownAction) {
                   const baseScore = config.actionScores[knownAction];
                   const totalActionScore = baseScore * count;
-
-                  let subject = "כללי";
-                  if (key.includes('-')) {
-                      subject = key.split('-')[0].trim();
-                  } else if (key.includes('...')) {
-                      subject = key.split('...')[0].trim();
-                  } else {
-                      subject = key; 
-                  }
-                  
-                  let teacher = teacherName;
-                  if (teacher === "צוות" && key.includes('-')) {
-                      teacher = key.split('-')[1].trim();
-                  }
 
                   db[name].logs.push({
                     sub: subject,
