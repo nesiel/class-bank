@@ -168,8 +168,8 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
           </button>
         </div>
 
-        {/* Tab Switcher */}
-        {isAuthenticated && !filterKeyword && (
+        {/* Tab Switcher - Now available to students too */}
+        {!filterKeyword && (
             <div className="flex px-6 gap-2 mb-2">
                 <button 
                     onClick={() => setActiveTab('behavior')} 
@@ -212,7 +212,7 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
               </div>
           )}
 
-          {/* Quick Actions / Manual Add - Only show if not filtered and not semester mode */}
+          {/* Quick Actions / Manual Add - Only show if TEACHER */}
           {isAuthenticated && activeTab === 'behavior' && !filterKeyword && !isSemesterMode && (
             <div className="bg-accent/5 p-4 rounded-3xl border border-accent/20">
                {!showAddAction && !showChallengeSelect ? (
@@ -306,7 +306,7 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
             </div>
           )}
 
-          {/* Grades View */}
+          {/* Grades View - Visible to Student & Teacher */}
           {activeTab === 'grades' && (
               <div className="space-y-4 animate-in fade-in">
                   <div className="bg-black/20 p-4 rounded-3xl border border-blue-500/20">
@@ -321,7 +321,7 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
                           </div>
                       </div>
 
-                      <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
+                      <div className="space-y-3 max-h-60 overflow-y-auto pr-1 custom-scrollbar">
                           {(!student.grades || student.grades.length === 0) && <p className="text-gray-500 text-xs text-center">לא הוזנו ציונים</p>}
                           {student.grades?.map((g, i) => (
                               <div key={i} className="space-y-1">
@@ -368,7 +368,7 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
           {/* Behavior Content */}
           {activeTab === 'behavior' && (
             <>
-                {/* Parents Section */}
+                {/* Parents Section - Visible to all, but only Teacher can click WA */}
                 <div className="space-y-3">
                     <h3 className="text-[10px] font-bold text-gray-500 uppercase flex items-center gap-2 mr-1">
                     <Users size={12}/> אנשי קשר ודיווחי נחת
@@ -385,7 +385,7 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
                             {student.phoneMother && (
                             <>
                                 <button onClick={() => window.open(`tel:${student.phoneMother}`)} className="p-2 bg-white/10 rounded-full text-white"><Phone size={14}/></button>
-                                <button onClick={() => handleWhatsApp(student.phoneMother!, student.nameMother || 'אמא')} className="p-2 bg-green-500/20 rounded-full text-green-500"><MessageCircle size={14}/></button>
+                                {isAuthenticated && <button onClick={() => handleWhatsApp(student.phoneMother!, student.nameMother || 'אמא')} className="p-2 bg-green-500/20 rounded-full text-green-500"><MessageCircle size={14}/></button>}
                             </>
                             )}
                         </div>
@@ -403,7 +403,7 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
                             {student.phoneFather && (
                             <>
                                 <button onClick={() => window.open(`tel:${student.phoneFather}`)} className="p-2 bg-white/10 rounded-full text-white"><Phone size={14}/></button>
-                                <button onClick={() => handleWhatsApp(student.phoneFather!, student.nameFather || 'אבא')} className="p-2 bg-green-500/20 rounded-full text-green-500"><MessageCircle size={14}/></button>
+                                {isAuthenticated && <button onClick={() => handleWhatsApp(student.phoneFather!, student.nameFather || 'אבא')} className="p-2 bg-green-500/20 rounded-full text-green-500"><MessageCircle size={14}/></button>}
                             </>
                             )}
                         </div>

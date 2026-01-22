@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Database, Student, AppConfig, DEFAULT_CONFIG, ThemeType, StoreItem, Purchase, UserRole, Challenge, LearningResource, ResourceType } from './types';
 import { parseExcel, fileToBase64, parseGradesExcel } from './utils';
@@ -11,7 +10,7 @@ import { LoginScreen } from './components/LoginScreen';
 import { LearningCenter } from './components/LearningCenter';
 import { GoogleGenAI } from "@google/genai";
 import { 
-  Home, ShieldCheck, ChevronUp, ChevronDown, Settings, Trash2, Trophy, FileSpreadsheet, Coins, Users, Phone, Download, UserPlus, LayoutGrid, Book, X, PlusCircle, ArrowUp, ArrowDown, GripVertical, MessageCircle, Undo, Scroll, Star, AlertCircle, Palette, Store, Image as ImageIcon, ShoppingBag, Plus, Package, Wand2, Loader2, Save, GraduationCap, LogOut, MinusCircle, KeyRound, Lock, Target, Cloud, Upload, RefreshCw, CheckSquare, Square, Check, BookOpen, Link as LinkIcon, FileText, HardDrive, FileQuestion, Copy, ExternalLink, Crown, Search, Activity
+  Home, ShieldCheck, ChevronUp, ChevronDown, Settings, Trash2, Trophy, FileSpreadsheet, Coins, Users, Phone, Download, UserPlus, LayoutGrid, Book, X, PlusCircle, ArrowUp, ArrowDown, GripVertical, MessageCircle, Undo, Scroll, Star, AlertCircle, Palette, Store, Image as ImageIcon, ShoppingBag, Plus, Package, Wand2, Loader2, Save, GraduationCap, LogOut, MinusCircle, KeyRound, Lock, Target, Cloud, Upload, RefreshCw, CheckSquare, Square, Check, BookOpen, Link as LinkIcon, FileText, HardDrive, FileQuestion, Copy, ExternalLink, Crown, Search, Activity, Eye, EyeOff
 } from 'lucide-react';
 
 // Define the available admin sections
@@ -46,6 +45,7 @@ export default function App() {
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showRules, setShowRules] = useState(false);
   const [showBatchCommenter, setShowBatchCommenter] = useState(false);
+  const [isStudentListExpanded, setIsStudentListExpanded] = useState(false); // Default collapsed
   
   // Podium State
   const [podiumMode, setPodiumMode] = useState<'regular' | 'grades'>('regular');
@@ -757,31 +757,46 @@ function createGeneratedQuiz() {
                          <div className="mt-8">
                              <div className="flex justify-between items-center mb-4 px-2">
                                  <h3 className="font-bold text-gray-400 flex items-center gap-2"><Users size={16}/> כל התלמידים</h3>
-                                 <div className="flex items-center gap-2 bg-black/20 rounded-lg p-1">
-                                     <Search size={14} className="text-gray-500 ml-1"/>
-                                     <input 
-                                        className="bg-transparent border-none outline-none text-xs text-white w-24" 
-                                        placeholder="חיפוש..." 
-                                        value={searchQuery}
-                                        onChange={(e) => setSearchQuery(e.target.value)}
-                                     />
+                                 <div className="flex items-center gap-2">
+                                     <button 
+                                        onClick={() => setIsStudentListExpanded(!isStudentListExpanded)}
+                                        className="p-2 bg-white/5 rounded-full hover:bg-white/10 text-gray-400"
+                                     >
+                                         {isStudentListExpanded ? <EyeOff size={16}/> : <Eye size={16}/>}
+                                     </button>
+                                     <div className="flex items-center gap-2 bg-black/20 rounded-lg p-1">
+                                         <Search size={14} className="text-gray-500 ml-1"/>
+                                         <input 
+                                            className="bg-transparent border-none outline-none text-xs text-white w-24" 
+                                            placeholder="חיפוש..." 
+                                            value={searchQuery}
+                                            onChange={(e) => setSearchQuery(e.target.value)}
+                                         />
+                                     </div>
                                  </div>
                              </div>
-                             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                                 {(Object.values(db) as Student[])
-                                    .filter(s => s.name.includes(searchQuery))
-                                    .sort((a,b) => a.name.localeCompare(b.name))
-                                    .map(s => (
-                                     <button 
-                                        key={s.name}
-                                        onClick={() => handleStudentClick(s)}
-                                        className="bg-card hover:bg-white/5 p-3 rounded-xl border border-border flex flex-col items-center gap-2 transition active:scale-95 text-center group"
-                                     >
-                                         <span className="font-bold text-sm text-txt group-hover:text-accent truncate w-full">{s.name}</span>
-                                         <span className={`text-xs font-black ${s.total < 0 ? 'text-red-500' : 'text-accent'}`}>{s.total}₪</span>
-                                     </button>
-                                 ))}
-                             </div>
+                             
+                             {/* Collapsible List */}
+                             {isStudentListExpanded && (
+                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 animate-in fade-in slide-in-from-top-4">
+                                    {(Object.values(db) as Student[])
+                                        .filter(s => s.name.includes(searchQuery))
+                                        .sort((a,b) => a.name.localeCompare(b.name))
+                                        .map(s => (
+                                        <button 
+                                            key={s.name}
+                                            onClick={() => handleStudentClick(s)}
+                                            className="bg-card hover:bg-white/5 p-3 rounded-xl border border-border flex flex-col items-center gap-2 transition active:scale-95 text-center group"
+                                        >
+                                            <span className="font-bold text-sm text-txt group-hover:text-accent truncate w-full">{s.name}</span>
+                                            <span className={`text-xs font-black ${s.total < 0 ? 'text-red-500' : 'text-accent'}`}>{s.total}₪</span>
+                                        </button>
+                                    ))}
+                                </div>
+                             )}
+                             {!isStudentListExpanded && (
+                                 <p className="text-center text-xs text-gray-500 italic py-4">הרשימה מוסתרת. לחץ על העין כדי להציג.</p>
+                             )}
                          </div>
                      )}
 
@@ -814,6 +829,50 @@ function createGeneratedQuiz() {
                             </div>
                         </div>
                      )}
+                 </div>
+             )}
+
+             {/* CONTACTS VIEW */}
+             {currentView === 'contacts' && (
+                 <div className="h-full overflow-y-auto p-4 pb-24">
+                     <h2 className="text-2xl font-black text-white mb-6 flex items-center gap-2">
+                         <Phone size={24} className="text-gray-400"/> אנשי קשר
+                     </h2>
+                     <div className="mb-4 relative">
+                         <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500" size={16}/>
+                         <input 
+                            className="w-full bg-black/20 border border-white/10 rounded-xl py-3 pr-10 pl-4 text-white text-sm outline-none focus:border-accent"
+                            placeholder="חפש תלמיד..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                         />
+                     </div>
+                     <div className="space-y-2">
+                         {(Object.values(db) as Student[])
+                            .filter(s => s.name.includes(searchQuery))
+                            .sort((a,b) => a.name.localeCompare(b.name))
+                            .map(s => (
+                                <button 
+                                    key={s.name}
+                                    onClick={() => handleStudentClick(s)}
+                                    className="w-full bg-card hover:bg-white/5 p-4 rounded-xl border border-white/5 flex items-center justify-between group transition active:scale-[0.98]"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full bg-black/30 flex items-center justify-center text-gray-400 font-bold group-hover:text-accent group-hover:border group-hover:border-accent/30 transition-colors">
+                                            {s.name.charAt(0)}
+                                        </div>
+                                        <div className="text-right">
+                                            <h3 className="font-bold text-white text-sm">{s.name}</h3>
+                                            <p className="text-xs text-gray-500 truncate">
+                                                {s.phoneMother ? `אמא: ${s.phoneMother}` : s.phoneFather ? `אבא: ${s.phoneFather}` : 'אין פרטי קשר'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <ChevronUp className="text-gray-600 rotate-90" size={20}/>
+                                </button>
+                            ))
+                         }
+                     </div>
                  </div>
              )}
 
@@ -1031,7 +1090,94 @@ function createGeneratedQuiz() {
 
                                             {sectionId === 'learning_manage' && (
                                                 <div className="space-y-4">
-                                                     {/* ... (Previous Learning Manage Code) ... */}
+                                                    {/* Add Subject */}
+                                                    <div className="flex gap-2">
+                                                        <input 
+                                                            type="text" 
+                                                            value={newSubjectName} 
+                                                            onChange={(e) => setNewSubjectName(e.target.value)}
+                                                            className="flex-1 bg-black/20 border border-white/10 rounded-xl p-2 text-xs text-white"
+                                                            placeholder="שם תיקייה חדשה..."
+                                                        />
+                                                        <button onClick={handleAddSubject} className="bg-emerald-500/20 text-emerald-500 border border-emerald-500/30 px-4 rounded-xl text-xs font-bold">הוסף</button>
+                                                    </div>
+                                                    
+                                                    {/* Delete Subject */}
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {(config.learningSubjects || []).map(sub => (
+                                                            <div key={sub} className="flex items-center gap-2 bg-white/5 px-3 py-1 rounded-full border border-white/10">
+                                                                <span className="text-xs text-gray-300">{sub}</span>
+                                                                <button onClick={() => handleDeleteSubject(sub)} className="text-red-400 hover:text-red-300"><X size={10}/></button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+
+                                                    <div className="border-t border-white/5 my-2"></div>
+
+                                                    {/* Add Resource */}
+                                                    <div className="space-y-2 bg-black/10 p-3 rounded-xl">
+                                                        <p className="text-xs font-bold text-gray-400">הוספת קובץ / קישור</p>
+                                                        <input 
+                                                            type="text" 
+                                                            value={newResource.title} 
+                                                            onChange={(e) => setNewResource(prev => ({...prev, title: e.target.value}))}
+                                                            className="w-full bg-black/20 border border-white/10 rounded-lg p-2 text-xs text-white"
+                                                            placeholder="כותרת (למשל: דף עבודה במתמטיקה)"
+                                                        />
+                                                        <div className="flex gap-2">
+                                                            <select 
+                                                                value={newResource.subject}
+                                                                onChange={(e) => setNewResource(prev => ({...prev, subject: e.target.value}))}
+                                                                className="flex-1 bg-black/20 border border-white/10 rounded-lg p-2 text-xs text-white outline-none"
+                                                            >
+                                                                <option value="">בחר תיקייה...</option>
+                                                                {(config.learningSubjects || []).map(s => <option key={s} value={s}>{s}</option>)}
+                                                            </select>
+                                                            <select 
+                                                                value={newResource.type}
+                                                                onChange={(e) => {
+                                                                    const val = e.target.value;
+                                                                    if (val === 'quiz' || val === 'review') {
+                                                                        setPresetResource(val as 'quiz' | 'review');
+                                                                    } else {
+                                                                        setNewResource(prev => ({...prev, type: val as ResourceType}));
+                                                                    }
+                                                                }}
+                                                                className="w-24 bg-black/20 border border-white/10 rounded-lg p-2 text-xs text-white outline-none"
+                                                            >
+                                                                <option value="link">קישור</option>
+                                                                <option value="file">קובץ</option>
+                                                                <option value="video">וידאו</option>
+                                                                <option value="form">טופס</option>
+                                                            </select>
+                                                        </div>
+                                                        
+                                                        {newResource.type === 'file' ? (
+                                                            <input type="file" onChange={handleResourceFileUpload} className="text-xs text-gray-400"/>
+                                                        ) : (
+                                                            <input 
+                                                                type="text" 
+                                                                value={newResource.url} 
+                                                                onChange={(e) => setNewResource(prev => ({...prev, url: e.target.value}))}
+                                                                className="w-full bg-black/20 border border-white/10 rounded-lg p-2 text-xs text-white ltr"
+                                                                placeholder="URL..."
+                                                            />
+                                                        )}
+                                                        
+                                                        <button onClick={handleAddResource} className="w-full bg-emerald-600 text-white py-2 rounded-lg text-xs font-bold mt-2">שמור במרכז הלמידה</button>
+                                                    </div>
+
+                                                    {/* List Resources */}
+                                                    <div className="max-h-40 overflow-y-auto space-y-1">
+                                                        {(config.learningResources || []).map(r => (
+                                                            <div key={r.id} className="flex justify-between items-center bg-white/5 p-2 rounded-lg">
+                                                                <div className="truncate flex-1">
+                                                                    <span className="text-xs text-emerald-400 font-bold">[{r.subject}]</span> <span className="text-xs text-gray-300">{r.title}</span>
+                                                                </div>
+                                                                <button onClick={() => handleDeleteResource(r.id)} className="text-red-500 hover:text-red-400 p-1"><Trash2 size={12}/></button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
                                                 </div>
                                             )}
 
