@@ -1,5 +1,5 @@
 
-import { Database, Student, LogEntry, AppConfig } from './types';
+import { Database, Student, LogEntry, AppConfig, GradeEntry } from './types';
 import * as XLSX from 'xlsx';
 
 // Helper to compress images before saving to LocalStorage
@@ -46,6 +46,53 @@ export const fileToBase64 = (file: File): Promise<string> => {
     reader.onload = () => resolve(reader.result as string);
     reader.onerror = error => reject(error);
   });
+};
+
+export const parseGradesExcel = async (file: File): Promise<Record<string, GradeEntry[]>> => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const data = new Uint8Array(e.target?.result as ArrayBuffer);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheetName = workbook.SheetNames[0];
+                const sheet = workbook.Sheets[sheetName];
+                const json = XLSX.utils.sheet_to_json(sheet) as any[];
+                
+                const result: Record<string, GradeEntry[]> = {};
+
+                json.forEach((row) => {
+                    // Identify student name key (heuristic)
+                    const nameKey = Object.keys(row).find(k => k.includes('שם') || k.includes('תלמיד') || k === 'Name');
+                    if (!nameKey) return;
+                    
+                    const name = String(row[nameKey]).trim();
+                    const grades: GradeEntry[] = [];
+
+                    Object.keys(row).forEach(key => {
+                        if (key === nameKey) return; // Skip name column
+                        
+                        // Attempt to parse score
+                        const val = row[key];
+                        const score = parseFloat(val);
+                        
+                        // Only add if it's a valid number
+                        if (!isNaN(score)) {
+                            grades.push({
+                                subject: key.trim(),
+                                score: score
+                            });
+                        }
+                    });
+
+                    result[name] = grades;
+                });
+                
+                resolve(result);
+            } catch (err) { reject(err); }
+        };
+        reader.readAsArrayBuffer(file);
+    });
 };
 
 export const parseExcel = async (file: File, config: AppConfig): Promise<Database> => {

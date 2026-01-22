@@ -1,8 +1,7 @@
 
-
 import React, { useState } from 'react';
 import { Student, AppConfig, Challenge } from '../types';
-import { X, Trash2, Calendar, MessageCircle, Phone, Heart, Users, GraduationCap, PlusCircle, Check, MinusCircle, Mail, Smartphone, Home, Trophy, Filter, RotateCcw, KeyRound, Target } from 'lucide-react';
+import { X, Trash2, Calendar, MessageCircle, Phone, Heart, Users, GraduationCap, PlusCircle, Check, MinusCircle, Mail, Smartphone, Home, Trophy, Filter, RotateCcw, KeyRound, Target, Activity, FileSpreadsheet } from 'lucide-react';
 
 interface StudentDetailsProps {
   student: Student | null;
@@ -17,6 +16,7 @@ interface StudentDetailsProps {
 }
 
 export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config, onClose, onDeleteLog, onAddLog, onMarkNachat, onUpdateStudent, isAuthenticated, filterKeyword }) => {
+  const [activeTab, setActiveTab] = useState<'behavior' | 'grades'>('behavior');
   const [showAddAction, setShowAddAction] = useState(false);
   const [showChallengeSelect, setShowChallengeSelect] = useState(false);
   const [isManualInput, setIsManualInput] = useState(false);
@@ -25,6 +25,9 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
   const [selectedAction, setSelectedAction] = useState("");
   const [customReason, setCustomReason] = useState("");
   const [customScore, setCustomScore] = useState<string>("0");
+
+  // State for goal
+  const [goalInput, setGoalInput] = useState(student?.academicGoal || "");
 
   if (!student) return null;
 
@@ -54,6 +57,11 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
           onUpdateStudent({ ...student, password: undefined });
           alert("הסיסמה אופסה ל-1234 בהצלחה!");
       }
+  };
+
+  const handleSaveGoal = () => {
+      onUpdateStudent({ ...student, academicGoal: goalInput });
+      alert("היעד נשמר בהצלחה!");
   };
 
   const handleAwardChallenge = (challenge: Challenge) => {
@@ -101,6 +109,25 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
     setCustomScore("0");
   };
 
+  // Grade Calculations
+  const average = student.grades && student.grades.length > 0 
+    ? Math.round(student.grades.reduce((sum, g) => sum + (Number(g.score) || 0), 0) / student.grades.length) 
+    : 0;
+
+  const getScoreColor = (score: number) => {
+      if (score >= 90) return 'bg-green-500';
+      if (score >= 75) return 'bg-yellow-500';
+      if (score >= 55) return 'bg-orange-500';
+      return 'bg-red-500';
+  };
+
+  const getScoreTextColor = (score: number) => {
+      if (score >= 90) return 'text-green-500';
+      if (score >= 75) return 'text-yellow-500';
+      if (score >= 55) return 'text-orange-500';
+      return 'text-red-500';
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-200">
       <div className="bg-card w-full max-w-lg max-h-[90vh] rounded-[2.5rem] border-2 border-accent/40 shadow-2xl flex flex-col overflow-hidden relative">
@@ -141,10 +168,28 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
           </button>
         </div>
 
+        {/* Tab Switcher */}
+        {isAuthenticated && !filterKeyword && (
+            <div className="flex px-6 gap-2 mb-2">
+                <button 
+                    onClick={() => setActiveTab('behavior')} 
+                    className={`flex-1 py-2 rounded-xl text-xs font-bold transition ${activeTab === 'behavior' ? 'bg-accent text-accent-fg' : 'bg-white/5 text-gray-400'}`}
+                >
+                    <Heart size={14} className="inline mr-1"/> התנהגות
+                </button>
+                <button 
+                    onClick={() => setActiveTab('grades')} 
+                    className={`flex-1 py-2 rounded-xl text-xs font-bold transition ${activeTab === 'grades' ? 'bg-blue-500 text-white' : 'bg-white/5 text-gray-400'}`}
+                >
+                    <FileSpreadsheet size={14} className="inline mr-1"/> ציונים ויעדים
+                </button>
+            </div>
+        )}
+
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           
           {/* Admin Tools: Password Reset */}
-          {isAuthenticated && !filterKeyword && !isSemesterMode && (
+          {isAuthenticated && activeTab === 'behavior' && !filterKeyword && !isSemesterMode && (
               <div className="flex gap-2">
                   {student.isHiddenFromPodium ? (
                     <button 
@@ -168,7 +213,7 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
           )}
 
           {/* Quick Actions / Manual Add - Only show if not filtered and not semester mode */}
-          {isAuthenticated && !filterKeyword && !isSemesterMode && (
+          {isAuthenticated && activeTab === 'behavior' && !filterKeyword && !isSemesterMode && (
             <div className="bg-accent/5 p-4 rounded-3xl border border-accent/20">
                {!showAddAction && !showChallengeSelect ? (
                  <div className="flex gap-2">
@@ -261,91 +306,155 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
             </div>
           )}
 
-          {/* Parents Section */}
-          <div className="space-y-3">
-            <h3 className="text-[10px] font-bold text-gray-500 uppercase flex items-center gap-2 mr-1">
-              <Users size={12}/> אנשי קשר ודיווחי נחת
-            </h3>
-            <div className="grid grid-cols-1 gap-2">
-              <div className="bg-white/5 p-4 rounded-2xl border border-white/5 flex flex-col justify-center">
-                <div className="flex justify-between items-center mb-1">
-                  <div>
-                    <p className="text-xs font-bold text-pink-400">אמא: {student.nameMother || "לא ידוע"}</p>
-                    <p className="text-[10px] text-gray-500">{student.phoneMother || "---"}</p>
-                    {student.emailMother && <p className="text-[9px] text-gray-600 flex items-center gap-1 mt-0.5"><Mail size={8}/> {student.emailMother}</p>}
-                  </div>
-                  <div className="flex gap-2">
-                    {student.phoneMother && (
-                      <>
-                        <button onClick={() => window.open(`tel:${student.phoneMother}`)} className="p-2 bg-white/10 rounded-full text-white"><Phone size={14}/></button>
-                        <button onClick={() => handleWhatsApp(student.phoneMother!, student.nameMother || 'אמא')} className="p-2 bg-green-500/20 rounded-full text-green-500"><MessageCircle size={14}/></button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
-              
-              <div className="bg-white/5 p-4 rounded-2xl border border-white/5 flex flex-col justify-center">
-                <div className="flex justify-between items-center mb-1">
-                  <div>
-                    <p className="text-xs font-bold text-blue-400">אבא: {student.nameFather || "לא ידוע"}</p>
-                    <p className="text-[10px] text-gray-500">{student.phoneFather || "---"}</p>
-                    {student.emailFather && <p className="text-[9px] text-gray-600 flex items-center gap-1 mt-0.5"><Mail size={8}/> {student.emailFather}</p>}
-                  </div>
-                  <div className="flex gap-2">
-                    {student.phoneFather && (
-                      <>
-                        <button onClick={() => window.open(`tel:${student.phoneFather}`)} className="p-2 bg-white/10 rounded-full text-white"><Phone size={14}/></button>
-                        <button onClick={() => handleWhatsApp(student.phoneFather!, student.nameFather || 'אבא')} className="p-2 bg-green-500/20 rounded-full text-green-500"><MessageCircle size={14}/></button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+          {/* Grades View */}
+          {activeTab === 'grades' && (
+              <div className="space-y-4 animate-in fade-in">
+                  <div className="bg-black/20 p-4 rounded-3xl border border-blue-500/20">
+                      <div className="flex justify-between items-center mb-4">
+                          <div className="flex items-center gap-2">
+                              <Activity className="text-blue-400" size={20} />
+                              <h3 className="font-bold text-white">הישגים לימודיים</h3>
+                          </div>
+                          <div className="text-center">
+                              <span className="text-[10px] text-gray-400 block">ממוצע כולל</span>
+                              <span className={`text-2xl font-black ${getScoreTextColor(average)}`}>{average}</span>
+                          </div>
+                      </div>
 
-          {/* Activity Logs */}
-          <div className="space-y-3">
-            <h3 className="text-[10px] font-bold text-gray-500 uppercase flex items-center gap-2 mr-1">
-              <Calendar size={12}/> פירוט פעולות וניקוד {filterKeyword && !isSemesterMode && "(מסונן)"}
-            </h3>
-            <div className="space-y-2">
-              {displayedLogs.length === 0 ? (
-                <div className="text-center py-10 text-gray-500 text-xs">
-                    {filterKeyword && !isSemesterMode ? "לא נמצאו נתונים תואמים לסינון" : "טרם נרשמו פעולות"}
-                </div>
-              ) : (
-                displayedLogs.slice().reverse().map((logItem, idx) => (
-                  <div key={idx} className="bg-black/10 p-4 rounded-2xl border border-border flex justify-between items-start">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${logItem.s >= 0 ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
-                          {logItem.c} פעמים
-                        </span>
-                        <p className={`font-bold text-sm ${logItem.s >= 0 ? 'text-green-500' : 'text-red-500'}`}>{logItem.k}</p>
+                      <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
+                          {(!student.grades || student.grades.length === 0) && <p className="text-gray-500 text-xs text-center">לא הוזנו ציונים</p>}
+                          {student.grades?.map((g, i) => (
+                              <div key={i} className="space-y-1">
+                                  <div className="flex justify-between text-xs font-bold">
+                                      <span className="text-gray-300">{g.subject}</span>
+                                      <span className={getScoreTextColor(Number(g.score))}>{g.score}</span>
+                                  </div>
+                                  <div className="w-full bg-black/40 h-2 rounded-full overflow-hidden">
+                                      <div 
+                                        className={`h-full rounded-full ${getScoreColor(Number(g.score))}`} 
+                                        style={{ width: `${Math.min(100, Math.max(0, Number(g.score)))}%` }}
+                                      ></div>
+                                  </div>
+                              </div>
+                          ))}
                       </div>
-                      <div className="flex flex-wrap gap-2 text-[10px] text-gray-500 mt-2">
-                        <span className="bg-white/5 px-2 py-0.5 rounded flex items-center gap-1"><GraduationCap size={10}/> {logItem.sub}</span>
-                        <span className="bg-white/5 px-2 py-0.5 rounded flex items-center gap-1"><Users size={10}/> {logItem.teach}</span>
-                        <span className="text-gray-600">{logItem.d}</span>
-                      </div>
-                    </div>
-                    <div className="text-left">
-                      <p className={`font-black text-lg ${logItem.s >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                        {logItem.s > 0 ? '+' : ''}{logItem.s}₪
-                      </p>
-                      {isAuthenticated && !isSemesterMode && (
-                        <button onClick={() => onDeleteLog(student.name, logItem.originalIndex)} className="text-red-500/30 hover:text-red-500 transition-colors mt-2">
-                          <Trash2 size={12}/>
-                        </button>
-                      )}
-                    </div>
                   </div>
-                ))
-              )}
-            </div>
-          </div>
+
+                  {/* Goal Setting */}
+                  <div className="bg-orange-500/10 p-4 rounded-3xl border border-orange-500/20">
+                      <h4 className="font-bold text-orange-400 mb-2 flex items-center gap-2">
+                          <Target size={16}/> יעד לימודי אישי
+                      </h4>
+                      {isAuthenticated ? (
+                          <div className="flex gap-2">
+                              <input 
+                                type="text" 
+                                value={goalInput}
+                                onChange={(e) => setGoalInput(e.target.value)}
+                                placeholder="לדוגמה: שיפור ציון בחשבון ל-85..."
+                                className="flex-1 bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-orange-500"
+                              />
+                              <button onClick={handleSaveGoal} className="bg-orange-500 text-white font-bold px-4 rounded-xl text-xs shadow-lg active:scale-95">שמור</button>
+                          </div>
+                      ) : (
+                          <p className="text-sm text-gray-300 italic">
+                              {student.academicGoal || "טרם נקבע יעד לימודי."}
+                          </p>
+                      )}
+                  </div>
+              </div>
+          )}
+
+          {/* Behavior Content */}
+          {activeTab === 'behavior' && (
+            <>
+                {/* Parents Section */}
+                <div className="space-y-3">
+                    <h3 className="text-[10px] font-bold text-gray-500 uppercase flex items-center gap-2 mr-1">
+                    <Users size={12}/> אנשי קשר ודיווחי נחת
+                    </h3>
+                    <div className="grid grid-cols-1 gap-2">
+                    <div className="bg-white/5 p-4 rounded-2xl border border-white/5 flex flex-col justify-center">
+                        <div className="flex justify-between items-center mb-1">
+                        <div>
+                            <p className="text-xs font-bold text-pink-400">אמא: {student.nameMother || "לא ידוע"}</p>
+                            <p className="text-[10px] text-gray-500">{student.phoneMother || "---"}</p>
+                            {student.emailMother && <p className="text-[9px] text-gray-600 flex items-center gap-1 mt-0.5"><Mail size={8}/> {student.emailMother}</p>}
+                        </div>
+                        <div className="flex gap-2">
+                            {student.phoneMother && (
+                            <>
+                                <button onClick={() => window.open(`tel:${student.phoneMother}`)} className="p-2 bg-white/10 rounded-full text-white"><Phone size={14}/></button>
+                                <button onClick={() => handleWhatsApp(student.phoneMother!, student.nameMother || 'אמא')} className="p-2 bg-green-500/20 rounded-full text-green-500"><MessageCircle size={14}/></button>
+                            </>
+                            )}
+                        </div>
+                        </div>
+                    </div>
+                    
+                    <div className="bg-white/5 p-4 rounded-2xl border border-white/5 flex flex-col justify-center">
+                        <div className="flex justify-between items-center mb-1">
+                        <div>
+                            <p className="text-xs font-bold text-blue-400">אבא: {student.nameFather || "לא ידוע"}</p>
+                            <p className="text-[10px] text-gray-500">{student.phoneFather || "---"}</p>
+                            {student.emailFather && <p className="text-[9px] text-gray-600 flex items-center gap-1 mt-0.5"><Mail size={8}/> {student.emailFather}</p>}
+                        </div>
+                        <div className="flex gap-2">
+                            {student.phoneFather && (
+                            <>
+                                <button onClick={() => window.open(`tel:${student.phoneFather}`)} className="p-2 bg-white/10 rounded-full text-white"><Phone size={14}/></button>
+                                <button onClick={() => handleWhatsApp(student.phoneFather!, student.nameFather || 'אבא')} className="p-2 bg-green-500/20 rounded-full text-green-500"><MessageCircle size={14}/></button>
+                            </>
+                            )}
+                        </div>
+                        </div>
+                    </div>
+                    </div>
+                </div>
+
+                {/* Activity Logs */}
+                <div className="space-y-3">
+                    <h3 className="text-[10px] font-bold text-gray-500 uppercase flex items-center gap-2 mr-1">
+                    <Calendar size={12}/> פירוט פעולות וניקוד {filterKeyword && !isSemesterMode && "(מסונן)"}
+                    </h3>
+                    <div className="space-y-2">
+                    {displayedLogs.length === 0 ? (
+                        <div className="text-center py-10 text-gray-500 text-xs">
+                            {filterKeyword && !isSemesterMode ? "לא נמצאו נתונים תואמים לסינון" : "טרם נרשמו פעולות"}
+                        </div>
+                    ) : (
+                        displayedLogs.slice().reverse().map((logItem, idx) => (
+                        <div key={idx} className="bg-black/10 p-4 rounded-2xl border border-border flex justify-between items-start">
+                            <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${logItem.s >= 0 ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
+                                {logItem.c} פעמים
+                                </span>
+                                <p className={`font-bold text-sm ${logItem.s >= 0 ? 'text-green-500' : 'text-red-500'}`}>{logItem.k}</p>
+                            </div>
+                            <div className="flex flex-wrap gap-2 text-[10px] text-gray-500 mt-2">
+                                <span className="bg-white/5 px-2 py-0.5 rounded flex items-center gap-1"><GraduationCap size={10}/> {logItem.sub}</span>
+                                <span className="bg-white/5 px-2 py-0.5 rounded flex items-center gap-1"><Users size={10}/> {logItem.teach}</span>
+                                <span className="text-gray-600">{logItem.d}</span>
+                            </div>
+                            </div>
+                            <div className="text-left">
+                            <p className={`font-black text-lg ${logItem.s >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                {logItem.s > 0 ? '+' : ''}{logItem.s}₪
+                            </p>
+                            {isAuthenticated && !isSemesterMode && (
+                                <button onClick={() => onDeleteLog(student.name, logItem.originalIndex)} className="text-red-500/30 hover:text-red-500 transition-colors mt-2">
+                                <Trash2 size={12}/>
+                                </button>
+                            )}
+                            </div>
+                        </div>
+                        ))
+                    )}
+                    </div>
+                </div>
+            </>
+          )}
         </div>
 
         <div className="p-6 bg-primary border-t border-accent/20 flex justify-between items-center">

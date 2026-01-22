@@ -1,5 +1,4 @@
 
-
 export interface LogEntry {
   sub: string;
   teach: string;
@@ -11,7 +10,7 @@ export interface LogEntry {
 
 export interface GradeEntry {
   subject: string;
-  score: string;
+  score: number; // Changed to number for calculations
 }
 
 export interface Purchase {
@@ -33,19 +32,19 @@ export interface Student {
   name: string;
   total: number;
   logs: LogEntry[];
-  purchases?: Purchase[]; // Added purchases history
+  purchases?: Purchase[]; 
   lastNachatDate?: string;
   
   // Semester Data
   semesterScore?: number;
-  semesterLogs?: LogEntry[]; // Detailed logs from semester import
+  semesterLogs?: LogEntry[]; 
 
   // Auth
-  password?: string; // Custom PIN, default is '1234' if undefined
+  password?: string; 
 
   // Contact Details
   studentCell?: string;
-  studentEmail?: string; // Added student email explicitly
+  studentEmail?: string; 
   homePhone?: string; 
   
   nameMother?: string;
@@ -58,10 +57,11 @@ export interface Student {
   
   isHiddenFromPodium?: boolean;
   
-  // Certificate generation
+  // Certificate generation & Academic Tracking
   grades?: GradeEntry[];
   academicReinforcement?: string;
   certificateComment?: string;
+  academicGoal?: string; // New: Specific goal set by teacher
   
   // Seating
   seatId?: string;
@@ -75,9 +75,9 @@ export interface StoreItem {
   id: string;
   name: string;
   emoji: string;
-  image?: string; // Base64 image string
+  image?: string; 
   price: number;
-  stock: number; // Inventory count
+  stock: number; 
 }
 
 export type ThemeType = 'current' | 'modern' | 'simple';
@@ -91,19 +91,19 @@ export interface LearningResource {
     title: string;
     subject: string;
     type: ResourceType;
-    url: string; // URL or Base64 data
+    url: string; 
     dateAdded: string;
 }
 
 export interface AppConfig {
   slogan: string;
   logo: string;
-  teacherCell: string; // Teacher's phone for notifications
-  teacherPin: string; // Login PIN for teacher
+  teacherCell: string; 
+  teacherPin: string; 
   pastWinners: string[];
   actionScores: Record<string, number>;
   storeItems: StoreItem[]; 
-  challenges: Challenge[]; // New: List of active challenges
+  challenges: Challenge[]; 
   
   // Learning Center
   learningSubjects: string[];
@@ -111,7 +111,7 @@ export interface AppConfig {
 
   rules: string;
   theme: ThemeType;
-  googleAppsScriptUrl?: string; // Sync URL
+  googleAppsScriptUrl?: string; 
 }
 
 export const DEFAULT_SCORES: Record<string, number> = {

@@ -1,8 +1,7 @@
 
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Database, Student, AppConfig, DEFAULT_CONFIG, ThemeType, StoreItem, Purchase, UserRole, Challenge, LearningResource, ResourceType } from './types';
-import { parseExcel, fileToBase64 } from './utils';
+import { parseExcel, fileToBase64, parseGradesExcel } from './utils';
 import { Podium } from './components/Podium';
 import { StudentDetails } from './components/StudentDetails';
 import { SeatingChart } from './components/SeatingChart';
@@ -12,7 +11,7 @@ import { LoginScreen } from './components/LoginScreen';
 import { LearningCenter } from './components/LearningCenter';
 import { GoogleGenAI } from "@google/genai";
 import { 
-  Home, ShieldCheck, ChevronUp, ChevronDown, Settings, Trash2, Trophy, FileSpreadsheet, Coins, Users, Phone, Download, UserPlus, LayoutGrid, Book, X, PlusCircle, ArrowUp, ArrowDown, GripVertical, MessageCircle, Undo, Scroll, Star, AlertCircle, Palette, Store, Image as ImageIcon, ShoppingBag, Plus, Package, Wand2, Loader2, Save, GraduationCap, LogOut, MinusCircle, KeyRound, Lock, Target, Cloud, Upload, RefreshCw, CheckSquare, Square, Check, BookOpen, Link as LinkIcon, FileText, HardDrive, FileQuestion, Copy, ExternalLink, Crown, Search
+  Home, ShieldCheck, ChevronUp, ChevronDown, Settings, Trash2, Trophy, FileSpreadsheet, Coins, Users, Phone, Download, UserPlus, LayoutGrid, Book, X, PlusCircle, ArrowUp, ArrowDown, GripVertical, MessageCircle, Undo, Scroll, Star, AlertCircle, Palette, Store, Image as ImageIcon, ShoppingBag, Plus, Package, Wand2, Loader2, Save, GraduationCap, LogOut, MinusCircle, KeyRound, Lock, Target, Cloud, Upload, RefreshCw, CheckSquare, Square, Check, BookOpen, Link as LinkIcon, FileText, HardDrive, FileQuestion, Copy, ExternalLink, Crown, Search, Activity
 } from 'lucide-react';
 
 // Define the available admin sections
@@ -123,11 +122,14 @@ export default function App() {
             if (sCfg) {
                 try {
                     const parsed = JSON.parse(sCfg);
-                    loadedConfig = { ...DEFAULT_CONFIG, ...parsed };
-                    
-                    // Ensure URL is preserved from default if missing in local but exists in default
-                    if (DEFAULT_CONFIG.googleAppsScriptUrl && !parsed.googleAppsScriptUrl) {
-                        loadedConfig.googleAppsScriptUrl = DEFAULT_CONFIG.googleAppsScriptUrl;
+                    // FIXED: Ensure parsed is an object and not null before spreading
+                    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                        loadedConfig = { ...DEFAULT_CONFIG, ...(parsed as any) };
+                        
+                        // Ensure URL is preserved from default if missing in local but exists in default
+                        if (DEFAULT_CONFIG.googleAppsScriptUrl && !loadedConfig.googleAppsScriptUrl) {
+                            loadedConfig.googleAppsScriptUrl = DEFAULT_CONFIG.googleAppsScriptUrl;
+                        }
                     }
                 } catch (e) { console.error(e); }
             }
@@ -210,20 +212,34 @@ export default function App() {
   };
   
   const handleFullReset = () => {
-      // Set a flag to prevent immediate cloud reload on refresh
-      localStorage.setItem('bank_skip_cloud_load', 'true');
+      // Create a clean version of the DB: Keep students, reset scores/logs
+      const newDb: Database = {};
+      Object.entries(db).forEach(([key, student]) => {
+          newDb[key] = {
+              ...student,
+              total: 0,
+              logs: [],
+              purchases: [],
+              lastNachatDate: undefined,
+              semesterScore: undefined,
+              semesterLogs: undefined,
+              grades: undefined,
+              academicReinforcement: undefined,
+              certificateComment: undefined
+          };
+      });
 
-      // Clear all local storage keys related to the app
-      localStorage.removeItem('bank_db');
-      localStorage.removeItem('bank_cfg');
-      localStorage.removeItem('bank_auto_login');
-      localStorage.removeItem('admin_order_v2');
+      // Save the cleaned DB
+      saveDb(newDb);
       
-      // Reset state immediately to prevent visual glitches before reload
-      setDb({});
-      setConfig(DEFAULT_CONFIG);
+      // We DO NOT reset the config (so Learning Center, Store, Rules remain)
+      // saveConfig(DEFAULT_CONFIG); 
+
+      // Set a flag to prevent immediate cloud reload on refresh overriding our reset
+      localStorage.setItem('bank_skip_cloud_load', 'true');
       
-      // Small delay to ensure storage operations complete and UI feedback is seen
+      alert("התקופה אופסה בהצלחה!\n\nנשמרו:\n✅ רשימת התלמידים (אלפון)\n✅ מרכז הלמידה והחנות\n✅ הגדרות וסיסמאות\n\nנמחקו:\n❌ ניקוד והיסטוריית פעולות");
+      
       setTimeout(() => {
           window.location.reload();
       }, 200);
@@ -301,25 +317,26 @@ export default function App() {
         const final = { ...db };
         Object.entries(newDb).forEach(([name, data]) => {
           const studentData = data as Student;
-          if (final[name]) {
+          const currentStudent = final[name]; // Alias to prevent TS spread error
+          if (currentStudent) {
             if (type === 'behavior') {
               final[name] = { 
-                ...final[name], 
-                total: final[name].total + studentData.total, 
-                logs: [...final[name].logs, ...studentData.logs] 
+                ...currentStudent, 
+                total: currentStudent.total + studentData.total, 
+                logs: [...currentStudent.logs, ...studentData.logs] 
               };
             } else {
               final[name] = { 
-                ...final[name],
-                nameMother: studentData.nameMother || final[name].nameMother,
-                phoneMother: studentData.phoneMother || final[name].phoneMother,
-                emailMother: studentData.emailMother || final[name].emailMother,
-                nameFather: studentData.nameFather || final[name].nameFather,
-                phoneFather: studentData.phoneFather || final[name].phoneFather,
-                emailFather: studentData.emailFather || final[name].emailFather,
-                studentCell: studentData.studentCell || final[name].studentCell,
-                studentEmail: studentData.studentEmail || final[name].studentEmail,
-                homePhone: studentData.homePhone || final[name].homePhone
+                ...currentStudent,
+                nameMother: studentData.nameMother || currentStudent.nameMother,
+                phoneMother: studentData.phoneMother || currentStudent.phoneMother,
+                emailMother: studentData.emailMother || currentStudent.emailMother,
+                nameFather: studentData.nameFather || currentStudent.nameFather,
+                phoneFather: studentData.phoneFather || currentStudent.phoneFather,
+                emailFather: studentData.emailFather || currentStudent.emailFather,
+                studentCell: studentData.studentCell || currentStudent.studentCell,
+                studentEmail: studentData.studentEmail || currentStudent.studentEmail,
+                homePhone: studentData.homePhone || currentStudent.homePhone
               };
             }
           } else {
@@ -333,6 +350,31 @@ export default function App() {
     }
   };
 
+  const handleGradesFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files?.[0]) {
+          try {
+              const gradesData = await parseGradesExcel(e.target.files[0]);
+              const final = { ...db };
+              
+              let updatedCount = 0;
+              Object.entries(gradesData).forEach(([name, grades]) => {
+                  const currentStudent = final[name]; // Alias to prevent TS spread error
+                  if (currentStudent) {
+                      final[name] = { ...currentStudent, grades: grades };
+                      updatedCount++;
+                  }
+              });
+              
+              saveDb(final);
+              alert(`ציונים עודכנו עבור ${updatedCount} תלמידים בהצלחה!`);
+          } catch (err) {
+              console.error(err);
+              alert("שגיאה בטעינת קובץ הציונים. ודא שהמבנה תקין.");
+          }
+          e.target.value = '';
+      }
+  };
+
   const handleSemesterFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files?.[0]) {
           try {
@@ -341,11 +383,12 @@ export default function App() {
               
               Object.entries(parsedDb).forEach(([name, data]) => {
                   const studentData = data as Student;
-                  if (final[name]) {
+                  const currentStudent = final[name]; // Alias to prevent TS spread error
+                  if (currentStudent) {
                       final[name] = {
-                          ...final[name],
+                          ...currentStudent,
                           semesterScore: studentData.total,
-                          semesterLogs: studentData.logs // Save the logs from the excel into semesterLogs
+                          semesterLogs: studentData.logs 
                       };
                   } else {
                       final[name] = {
@@ -353,7 +396,7 @@ export default function App() {
                           total: 0,
                           logs: [],
                           semesterScore: studentData.total,
-                          semesterLogs: studentData.logs // Save the logs from the excel into semesterLogs
+                          semesterLogs: studentData.logs 
                       };
                   }
               });
@@ -551,7 +594,7 @@ function createGeneratedQuiz() {
                }
                return cloudRes;
           });
-          const mergedConfig = { ...data.config, storeItems: mergedStoreItems, learningResources: mergedResources };
+          const mergedConfig = { ...(data.config as any), storeItems: mergedStoreItems, learningResources: mergedResources };
           if (DEFAULT_CONFIG.googleAppsScriptUrl) mergedConfig.googleAppsScriptUrl = DEFAULT_CONFIG.googleAppsScriptUrl;
           saveConfig(mergedConfig);
       }
@@ -725,20 +768,38 @@ function createGeneratedQuiz() {
 
   const tefillahStats = (Object.values(db) as Student[])
     .map(s => {
-        const prayerLogs = s.logs.filter(l => l.sub && l.sub.includes('תפיל'));
-        const absences = prayerLogs.filter(l => l.k.includes('חיסור') || l.k.includes('איחור')).reduce((sum, l) => sum + l.c, 0);
-        const points = prayerLogs.filter(l => l.s > 0).reduce((sum, l) => sum + l.c, 0);
-        return { ...s, tefillahScore: points, tefillahAbsences: absences, goodWordsTefillah: points, hasPrayerLogs: prayerLogs.length > 0 };
-    })
-    .filter(s => s.hasPrayerLogs)
-    .sort((a, b) => { if (a.tefillahAbsences !== b.tefillahAbsences) { return a.tefillahAbsences - b.tefillahAbsences; } return b.tefillahScore - a.tefillahScore; });
+        // Filter logs: Subject contains 'תפיל' OR Action contains 'תפיל'
+        const prayerLogs = s.logs.filter(l => 
+            (l.sub && l.sub.includes('תפיל')) || 
+            (l.k && l.k.includes('תפיל'))
+        );
+        
+        // Sum the actual 's' (score) value
+        const points = prayerLogs.reduce((sum, l) => sum + l.s, 0);
+        
+        // Calculate absences
+        const absences = prayerLogs
+            .filter(l => l.k.includes('חיסור'))
+            .reduce((sum, l) => sum + l.c, 0);
 
-  let tefillahChampions = tefillahStats.filter(s => !s.isHiddenFromPodium);
-  if (tefillahChampions.length > 0) {
-      const firstPlace = tefillahChampions[0];
-      const allFirstPlaces = tefillahChampions.filter(s => s.tefillahAbsences === firstPlace.tefillahAbsences && s.tefillahScore === firstPlace.tefillahScore);
-      if (allFirstPlaces.length > 3) { tefillahChampions = allFirstPlaces; } else { tefillahChampions = tefillahChampions.slice(0, 3); }
-  }
+        // Return a "Projected" student object for the podium view
+        return { 
+            ...s, 
+            total: points, // Override total just for this view (display points on podium)
+            tefillahScore: points,
+            tefillahAbsences: absences, // Use this for sorting
+            hasPrayerLogs: prayerLogs.length > 0 
+        };
+    })
+    .filter(s => s.hasPrayerLogs) // Show even if score is 0, as long as there are logs
+    .sort((a, b) => {
+        // Primary sort: Absences (Ascending - 0 is best)
+        if (a.tefillahAbsences !== b.tefillahAbsences) {
+            return a.tefillahAbsences - b.tefillahAbsences;
+        }
+        // Secondary sort: Score (Descending - higher is better)
+        return b.tefillahScore - a.tefillahScore;
+    });
 
   // --- Render Admin Content ---
   const renderAdminSectionContent = (id: string) => {
@@ -764,6 +825,7 @@ function createGeneratedQuiz() {
                 <label className="flex flex-col items-center justify-center p-4 bg-green-500/10 border border-green-500/20 rounded-xl cursor-pointer active:scale-95 transition"><FileSpreadsheet className="text-green-500 mb-2" size={24} /><span className="text-xs font-bold text-green-500">דיווחי התנהגות</span><input type="file" className="hidden" accept=".xlsx, .xls" onChange={(e) => handleFileUpload(e, 'behavior')} /></label>
                 <label className="flex flex-col items-center justify-center p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl cursor-pointer active:scale-95 transition"><UserPlus className="text-blue-500 mb-2" size={24} /><span className="text-xs font-bold text-blue-500">אלפון כיתתי</span><input type="file" className="hidden" accept=".xlsx, .xls" onChange={(e) => handleFileUpload(e, 'alfon')} /></label>
                 <label className="col-span-2 flex items-center justify-center gap-2 p-4 bg-purple-500/10 border border-purple-500/20 rounded-xl cursor-pointer active:scale-95 transition"><Crown className="text-purple-500 mb-0" size={24} /><span className="text-xs font-bold text-purple-500">טעינת מצטייני מחצית (אקסל)</span><input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleSemesterFileUpload} /></label>
+                <label className="col-span-2 flex items-center justify-center gap-2 p-4 bg-orange-500/10 border border-orange-500/20 rounded-xl cursor-pointer active:scale-95 transition"><Activity className="text-orange-500 mb-0" size={24} /><span className="text-xs font-bold text-orange-500">טעינת גיליון ציונים (אקסל)</span><input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleGradesFileUpload} /></label>
                 <button onClick={() => setShowBatchCommenter(true)} className="col-span-2 flex items-center justify-center gap-2 p-4 bg-[#d4af37]/10 border border-[#d4af37]/20 rounded-xl active:scale-95 transition"><GraduationCap className="text-[#d4af37] mb-0" size={24} /><span className="text-xs font-bold text-[#d4af37]">מחולל הערות לתעודה (AI)</span></button>
                 <div className="col-span-2 bg-black/20 p-3 rounded-xl border border-border mt-2"><label className="text-[10px] text-gray-400 block mb-1">קוד כניסה למורה</label><input type="text" value={config.teacherPin} onChange={(e) => saveConfig({...config, teacherPin: e.target.value})} className="bg-transparent border-b border-accent/30 w-full text-sm font-bold text-accent outline-none text-center" placeholder="1234" /></div>
             </div>
@@ -869,6 +931,21 @@ function createGeneratedQuiz() {
                               </div>
                               <div className="flex justify-between items-end relative z-10"><div><span className="text-[10px] text-gray-400 block mb-1">היתרה שלך</span><span className="text-4xl font-black text-blue-400 tracking-tight">{db[loggedInStudentName].total}₪</span></div><div className="bg-blue-500/10 p-3 rounded-full text-blue-400 border border-blue-500/20"><Trophy size={24} /></div></div>
                           </div>
+                          
+                          {/* Student Grade/Goal Widget */}
+                          {db[loggedInStudentName].academicGoal && (
+                              <div 
+                                onClick={() => { setSelectedStudent(db[loggedInStudentName]); setDetailsFilter(""); }}
+                                className="bg-gradient-to-br from-purple-900/50 to-purple-600/20 border border-purple-500/30 p-4 rounded-2xl shadow-lg relative overflow-hidden cursor-pointer active:scale-95 transition"
+                              >
+                                  <h3 className="text-sm font-bold text-purple-300 flex items-center gap-2 mb-2"><Target size={16}/> היעד הלימודי שלי</h3>
+                                  <p className="text-white text-sm font-medium leading-relaxed">"{db[loggedInStudentName].academicGoal}"</p>
+                                  <div className="mt-3 flex justify-end">
+                                      <span className="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-1 rounded-full border border-purple-500/30">לחץ לצפייה בציונים</span>
+                                  </div>
+                              </div>
+                          )}
+
                           {/* ... other student widgets */}
                           {(config.challenges || []).length > 0 && (
                               <div className="space-y-2">
@@ -953,23 +1030,34 @@ function createGeneratedQuiz() {
                             {isTefillahOpen && (
                                 <div className="p-5 pt-0 space-y-3 animate-in slide-in-from-top-2">
                                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-accent to-transparent opacity-50"></div>
-                                    <div className="flex justify-between items-start mt-2"><span className="text-[10px] text-gray-400 bg-black/10 px-2 py-1 rounded-full border border-white/5">מצטייני התפילה</span></div>
+                                    <div className="flex justify-between items-start mt-2"><span className="text-[10px] text-gray-400 bg-black/10 px-2 py-1 rounded-full border border-white/5">מצטייני התפילה (לפי חיסורים)</span></div>
                                     <p className="text-xs text-txt/70 italic leading-relaxed border-r-2 border-accent/20 pr-3">"יְהִי רָצוֹן... שֶׁתַּשְׁרֶה שְׁכִינָה בְּמַעֲשֵׂה יָדֵינוּ..."</p>
-                                    <div className="flex flex-wrap justify-center gap-2 mt-2">
-                                        {tefillahChampions.map((s, idx) => (
-                                            <div key={idx} className="bg-black/10 p-2 rounded-2xl flex flex-col items-center text-center border border-border active:scale-95 transition-transform w-[30%] min-w-[90px]" onClick={() => { setSelectedStudent(s); setDetailsFilter('תפיל'); }}>
-                                            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold mb-1 shadow-md ${idx === 0 || (s.tefillahScore === tefillahChampions[0].tefillahScore && s.tefillahAbsences === tefillahChampions[0].tefillahAbsences) ? 'bg-yellow-500 text-black' : 'bg-white/10 text-gray-500'}`}>{idx + 1}</div>
-                                            <span className="text-xs font-bold truncate w-full text-txt">{s.name}</span>
-                                            <span className="text-[10px] text-accent font-black">{s.tefillahScore}₪</span>
-                                            </div>
-                                        ))}
+                                    
+                                    {/* New Podium for Tefillah */}
+                                    <div className="scale-90 origin-top -mb-4 mt-2">
+                                        {tefillahStats.length >= 3 ? (
+                                            <Podium 
+                                                students={tefillahStats.slice(0, 3)} 
+                                                onRemoveStudent={() => {}} 
+                                                onStudentClick={(s) => { 
+                                                    // Pass the real student from DB to maintain integrity, but filter for Tefillah in details view
+                                                    if(db[s.name]) {
+                                                        setSelectedStudent(db[s.name]); 
+                                                        setDetailsFilter('תפיל');
+                                                    }
+                                                }} 
+                                            />
+                                        ) : (
+                                            <p className="text-center text-gray-500 text-xs py-4">לא מספיק נתונים לפודיום תפילה</p>
+                                        )}
                                     </div>
+
                                     <button onClick={() => setShowAllTefillah(!showAllTefillah)} className="w-full mt-2 py-3 text-[10px] font-bold text-accent/50 uppercase flex justify-center items-center gap-2 border-t border-border bg-black/5 rounded-xl hover:bg-black/10 transition-colors">{showAllTefillah ? 'צמצם רשימת תפילה' : 'הצג את כל הכיתה'} {showAllTefillah ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}</button>
                                     {showAllTefillah && (
                                         <div className="mt-2 divide-y divide-border bg-black/10 rounded-2xl max-h-60 overflow-y-auto custom-scrollbar">
                                             {tefillahStats.map((s, i) => (
-                                                <div key={s.name} onClick={() => { setSelectedStudent(s); setDetailsFilter('תפיל'); }} className="p-3 flex justify-between items-center active:bg-white/5 cursor-pointer">
-                                                    <div className="flex items-center gap-3"><span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold bg-white/5 text-gray-500`}>{i + 1}</span><div className="flex flex-col"><span className="text-xs font-bold text-txt">{s.name}</span></div></div>
+                                                <div key={s.name} onClick={() => { setSelectedStudent(db[s.name]); setDetailsFilter('תפיל'); }} className="p-3 flex justify-between items-center active:bg-white/5 cursor-pointer">
+                                                    <div className="flex items-center gap-3"><span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold bg-white/5 text-gray-500`}>{i + 1}</span><div className="flex flex-col"><span className="text-xs font-bold text-txt">{s.name}</span><span className="text-[9px] text-gray-500">חיסורים: {s.tefillahAbsences}</span></div></div>
                                                     <span className={`text-xs font-black ${s.tefillahScore > 0 ? 'text-green-500' : 'text-gray-500'}`}>{s.tefillahScore}₪</span>
                                                 </div>
                                             ))}
@@ -1069,7 +1157,7 @@ function createGeneratedQuiz() {
       )}
 
       {showBatchCommenter && <BatchCommenter db={db} onSave={(updatedDb) => { saveDb(updatedDb); setShowBatchCommenter(false); }} onClose={() => setShowBatchCommenter(false)} />}
-      {showResetConfirm && (<div className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in"><div className="bg-card w-full max-w-sm rounded-[2rem] border border-red-500/30 p-8 text-center"><div className="inline-block p-4 rounded-full bg-red-500/10 text-red-500 mb-4"><Trash2 size={40} /></div><h3 className="text-2xl font-bold text-red-500 mb-2">אזהרה!</h3><p className="text-txt/70 mb-8 text-sm leading-relaxed">פעולה זו תמחק את כל הנתונים, התלמידים וההגדרות.<br/>האם להמשיך?</p><div className="flex gap-3"><button onClick={() => setShowResetConfirm(false)} className="flex-1 py-3.5 bg-white/10 rounded-2xl font-bold text-txt active:scale-95 transition-transform">ביטול</button><button onClick={handleFullReset} className="flex-1 py-3.5 bg-red-600 text-white rounded-2xl font-bold shadow-lg shadow-red-600/20 active:scale-95 transition-transform">כן, אפס הכל</button></div></div></div>)}
+      {showResetConfirm && (<div className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in"><div className="bg-card w-full max-w-sm rounded-[2rem] border border-red-500/30 p-8 text-center"><div className="inline-block p-4 rounded-full bg-red-500/10 text-red-500 mb-4"><Trash2 size={40} /></div><h3 className="text-2xl font-bold text-red-500 mb-2">אזהרה!</h3><p className="text-txt/70 mb-8 text-sm leading-relaxed">פעולה זו תאפס את הניקוד וההיסטוריה לכל התלמידים.<br/>רשימת התלמידים (אלפון) ומרכז הלמידה יישמרו.<br/>האם להמשיך?</p><div className="flex gap-3"><button onClick={() => setShowResetConfirm(false)} className="flex-1 py-3.5 bg-white/10 rounded-2xl font-bold text-txt active:scale-95 transition-transform">ביטול</button><button onClick={handleFullReset} className="flex-1 py-3.5 bg-red-600 text-white rounded-2xl font-bold shadow-lg shadow-red-600/20 active:scale-95 transition-transform">כן, אפס תקופה</button></div></div></div>)}
     </div>
   );
 }
