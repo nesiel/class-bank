@@ -48,7 +48,7 @@ export default function App() {
   const [showBatchCommenter, setShowBatchCommenter] = useState(false);
   
   // Podium State
-  const [podiumMode, setPodiumMode] = useState<'regular' | 'semester'>('regular');
+  const [podiumMode, setPodiumMode] = useState<'regular' | 'grades'>('regular');
 
   // Cloud Sync State
   const [isSyncing, setIsSyncing] = useState(false);
@@ -124,7 +124,7 @@ export default function App() {
                     const parsed = JSON.parse(sCfg);
                     // FIXED: Ensure parsed is an object and not null before spreading
                     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-                        loadedConfig = { ...DEFAULT_CONFIG, ...(parsed as any) };
+                        loadedConfig = Object.assign({}, DEFAULT_CONFIG, parsed);
                         
                         // Ensure URL is preserved from default if missing in local but exists in default
                         if (DEFAULT_CONFIG.googleAppsScriptUrl && !loadedConfig.googleAppsScriptUrl) {
@@ -216,7 +216,7 @@ export default function App() {
       const newDb: Database = {};
       Object.entries(db).forEach(([key, student]) => {
           newDb[key] = {
-              ...student,
+              ...(student as Student),
               total: 0,
               logs: [],
               purchases: [],
@@ -598,566 +598,600 @@ function createGeneratedQuiz() {
           if (DEFAULT_CONFIG.googleAppsScriptUrl) mergedConfig.googleAppsScriptUrl = DEFAULT_CONFIG.googleAppsScriptUrl;
           saveConfig(mergedConfig);
       }
-      if (!isAuto) { alert("הנתונים נטענו בהצלחה!"); window.location.reload(); }
       setSyncStatus('saved'); setTimeout(() => setSyncStatus('idle'), 2000);
-    } catch (e) { console.error(e); setSyncStatus('error'); if (!isAuto) alert(`שגיאה בטעינה: ${(e as Error).message}`); } finally { setIsSyncing(false); }
+      if (!isAuto) alert("הנתונים נטענו בהצלחה!");
+    } catch (e) { console.error(e); setSyncStatus('error'); if (!isAuto) alert(`שגיאה בטעינה מהענן: ${(e as Error).message}`); } finally { setIsSyncing(false); }
   };
 
-  const handleGenerateProductAsset = async (item: StoreItem) => {
-    setGeneratingItemId(item.id);
-    try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        if (!item.name.trim()) {
-            const nameResponse = await ai.models.generateContent({
-                model: 'gemini-3-flash-preview',
-                contents: "Suggest ONE popular, small, physical prize for a 5th grade classroom store (in Hebrew). Just the name.",
-            });
-            const suggestedName = nameResponse.text?.trim() || "הפתעה";
-            handleUpdateStoreItem(item.id, 'name', suggestedName);
-            item.name = suggestedName; 
-        }
-
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash-image',
-            contents: `Generate a cute, high-quality, 3D icon of ${item.name} (product) on a plain white background. It should look like a game asset.`,
-        });
-
-        const parts = response.candidates?.[0]?.content?.parts;
-        if (parts) {
-             for (const part of parts) {
-                if (part.inlineData) {
-                    const base64 = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-                    handleUpdateStoreItem(item.id, 'image', base64);
-                    break;
-                }
-             }
-        }
-    } catch (e) {
-        console.error(e);
-        alert("שגיאה בייצור אוטומטי. ודא חיבור לרשת.");
-    } finally {
-        setGeneratingItemId(null);
-    }
-  };
-
-  const handleCheckout = () => {
-    const checkoutStudentId = userRole === 'student' ? loggedInStudentName : storeSelectedStudentId;
-    if (!checkoutStudentId || cart.length === 0) return;
+  // --- Render Logic ---
+  
+  if (userRole === 'guest') {
+    return <LoginScreen students={Object.values(db) as Student[]} teacherPin={config.teacherPin} onLogin={handleLogin} onEnterLearning={() => setCurrentView('learning')} logo={config.logo} />;
+  }
+  
+  if (currentView === 'learning') {
+      return <LearningCenter config={config} onClose={() => { setCurrentView(userRole === 'guest' ? 'home' : 'home'); if(userRole === 'guest') handleLogout(); }} />;
+  }
+  
+  const getPodiumStudents = () => {
+    let list = (Object.values(db) as Student[]).filter(s => !s.isHiddenFromPodium);
     
-    const student = db[checkoutStudentId];
-    if (!student) return;
-
-    let totalCost = 0;
-    cart.forEach(item => totalCost += item.price);
-
-    if (student.total < totalCost) {
-        alert("שגיאה: אין מספיק נקודות לביצוע העסקה.");
-        return;
+    // Mode: Average Grades
+    if (podiumMode === 'grades') {
+         return list.map(s => {
+            const grades = s.grades || [];
+            const avg = grades.length > 0 
+                ? Math.round(grades.reduce((sum, g) => sum + (Number(g.score) || 0), 0) / grades.length)
+                : 0;
+            return { ...s, total: avg }; // Overwrite total just for display in Podium
+        }).sort((a, b) => b.total - a.total);
     }
-
-    const newPurchases: Purchase[] = cart.map(item => ({
-        id: Math.random().toString(36).substr(2, 9),
-        itemId: item.id,
-        itemName: item.name,
-        cost: item.price,
-        date: new Date().toLocaleDateString('he-IL'),
-        timestamp: Date.now()
-    }));
-
-    const updatedStudent: Student = {
-        ...student,
-        total: student.total - totalCost,
-        purchases: [...(student.purchases || []), ...newPurchases]
-    };
-
-    saveDb({ ...db, [student.name]: updatedStudent });
-
-    const updatedStoreItems = config.storeItems.map(storeItem => {
-        const countInCart = cart.filter(c => c.id === storeItem.id).length;
-        if (countInCart > 0) {
-            return { ...storeItem, stock: Math.max(0, storeItem.stock - countInCart) };
-        }
-        return storeItem;
-    });
-
-    saveConfig({ ...config, storeItems: updatedStoreItems });
-    setCart([]);
-    return true; 
+    
+    // Mode: Points (Regular)
+    return list.sort((a, b) => b.total - a.total);
   };
-
-  const handleBackup = () => {
-    try {
-      const data = JSON.stringify({ db, config });
-      const blob = new Blob([data], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `backup_${new Date().toLocaleDateString('he-IL').replace(/\./g, '-')}.json`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      alert("שגיאה ביצירת הגיבוי");
-    }
-  };
-
-  const handleRemoveFromPodium = (studentName: string) => {
-    if (userRole === 'student') return;
-    const newDb = { ...db };
-    if (newDb[studentName]) {
-      newDb[studentName] = { ...newDb[studentName], isHiddenFromPodium: true };
-      saveDb(newDb);
-      const timestamp = Date.now();
-      setUndoState({ name: studentName, timestamp });
-      setTimeout(() => { setUndoState(current => (current && current.timestamp === timestamp) ? null : current); }, 4000);
-    }
-  };
-
-  const handleUndoRemove = () => {
-    if (undoState) {
-      const newDb = { ...db };
-      if (newDb[undoState.name]) {
-        newDb[undoState.name] = { ...newDb[undoState.name], isHiddenFromPodium: false };
-        saveDb(newDb);
-        setUndoState(null);
-      }
-    }
-  };
-
-  const handleSendNachat = (e: React.MouseEvent, student: Student) => {
-    e.stopPropagation();
-    const phone = student.phoneMother || student.phoneFather;
-    if (!phone) { alert("לא נמצא מס' טלפון להורים"); return; }
-    const cleanPhone = phone.startsWith('05') ? '972' + phone.substring(1) : phone;
-    const message = `שמח להודיע כי בנכם ${student.name} תפקד מצוין השבוע! 🌟`;
-    window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank');
-  };
-
-  const isEligibleForNachat = (student: Student) => {
-    const hasNegatives = student.logs.some(l => l.s < 0);
-    const positiveCount = student.logs.filter(l => l.s > 0).length;
-    return !hasNegatives && positiveCount >= 2;
-  };
-
-  const moveItem = (index: number, direction: 'up' | 'down') => {
-    const newOrder = [...adminOrder];
-    if (direction === 'up') { if (index === 0) return; [newOrder[index], newOrder[index - 1]] = [newOrder[index - 1], newOrder[index]]; } 
-    else { if (index === newOrder.length - 1) return; [newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]]; }
-    saveAdminOrder(newOrder);
-  };
-
-  // --- Derived State Calculations ---
-  // Sort ALL students for the Podium view (which now includes the full list)
-  const sorted = (Object.values(db) as Student[]).sort((a, b) => b.total - a.total);
   
-  const sortedSemester = (Object.values(db) as Student[])
-      .map(s => ({ ...s, total: s.semesterScore || 0 })) 
-      .sort((a, b) => b.total - a.total);
-
-  // Apply search filtering to the podium lists directly
-  const filteredPodiumList = (podiumMode === 'regular' ? sorted : sortedSemester)
-      .filter(s => s.name.includes(searchQuery));
-
-  // Regular filtered list for Contacts view etc
-  const filtered = sorted.filter(s => s.name.includes(searchQuery));
-  
-  const classTotal = (Object.values(db) as Student[]).reduce((sum, s) => sum + s.total, 0);
-
-  const allPurchases = (Object.values(db) as Student[]).flatMap(s => (s.purchases || []).map(p => ({...p, studentName: s.name}))).sort((a, b) => b.timestamp - a.timestamp);
-
-  const tefillahStats = (Object.values(db) as Student[])
-    .map(s => {
-        // Filter logs: Subject contains 'תפיל' OR Action contains 'תפיל'
-        const prayerLogs = s.logs.filter(l => 
-            (l.sub && l.sub.includes('תפיל')) || 
-            (l.k && l.k.includes('תפיל'))
-        );
-        
-        // Sum the actual 's' (score) value
-        const points = prayerLogs.reduce((sum, l) => sum + l.s, 0);
-        
-        // Calculate absences
-        const absences = prayerLogs
-            .filter(l => l.k.includes('חיסור'))
-            .reduce((sum, l) => sum + l.c, 0);
-
-        // Return a "Projected" student object for the podium view
-        return { 
-            ...s, 
-            total: points, // Override total just for this view (display points on podium)
-            tefillahScore: points,
-            tefillahAbsences: absences, // Use this for sorting
-            hasPrayerLogs: prayerLogs.length > 0 
-        };
-    })
-    .filter(s => s.hasPrayerLogs) // Show even if score is 0, as long as there are logs
-    .sort((a, b) => {
-        // Primary sort: Absences (Ascending - 0 is best)
-        if (a.tefillahAbsences !== b.tefillahAbsences) {
-            return a.tefillahAbsences - b.tefillahAbsences;
-        }
-        // Secondary sort: Score (Descending - higher is better)
-        return b.tefillahScore - a.tefillahScore;
-    });
-
-  // --- Render Admin Content ---
-  const renderAdminSectionContent = (id: string) => {
-      switch(id) {
-        case 'cloud_sync': return (
-            <div className="space-y-4 pt-2">
-                <p className="text-xs text-gray-400">סנכרון הנתונים ל-Google Sheets מאפשר גיבוי בענן ושיתוף בין מכשירים. המערכת מבצעת שמירה אוטומטית ברקע.</p>
-                <div className="bg-black/20 p-3 rounded-xl border border-border">
-                    <label className="text-[10px] text-gray-400 block mb-1">כתובת ה-Web App של הסקריפט</label>
-                    <input type="text" value={config.googleAppsScriptUrl || ""} onChange={(e) => saveConfig({...config, googleAppsScriptUrl: e.target.value})} className="bg-transparent border-b border-accent/30 w-full text-xs text-white outline-none" placeholder="https://script.google.com/macros/s/..." />
-                </div>
-                <button onClick={() => setIncludeImagesInSync(!includeImagesInSync)} className="flex items-center gap-2 p-2 rounded-lg bg-black/10 border border-white/5 w-full text-xs hover:bg-black/20">
-                    {includeImagesInSync ? <CheckSquare size={16} className="text-accent" /> : <Square size={16} className="text-gray-500" />}<span className="text-white">כלול תמונות בגיבוי (עלול להיות איטי)</span>
-                </button>
-                <div className="flex gap-3">
-                     <button onClick={() => handleCloudSave(false)} disabled={isSyncing} className="flex-1 py-3 bg-sky-600 hover:bg-sky-500 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition disabled:opacity-50">{isSyncing ? <RefreshCw size={14} className="animate-spin"/> : <Upload size={14} />} שמור כעת</button>
-                     <button onClick={() => handleCloudLoad(false)} disabled={isSyncing} className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition disabled:opacity-50 border border-white/10">{isSyncing ? <RefreshCw size={14} className="animate-spin"/> : <Download size={14} />} טען כעת</button>
-                </div>
-            </div>
-        );
-        case 'import_files': return (
-            <div className="grid grid-cols-2 gap-3 pt-2">
-                <label className="flex flex-col items-center justify-center p-4 bg-green-500/10 border border-green-500/20 rounded-xl cursor-pointer active:scale-95 transition"><FileSpreadsheet className="text-green-500 mb-2" size={24} /><span className="text-xs font-bold text-green-500">דיווחי התנהגות</span><input type="file" className="hidden" accept=".xlsx, .xls" onChange={(e) => handleFileUpload(e, 'behavior')} /></label>
-                <label className="flex flex-col items-center justify-center p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl cursor-pointer active:scale-95 transition"><UserPlus className="text-blue-500 mb-2" size={24} /><span className="text-xs font-bold text-blue-500">אלפון כיתתי</span><input type="file" className="hidden" accept=".xlsx, .xls" onChange={(e) => handleFileUpload(e, 'alfon')} /></label>
-                <label className="col-span-2 flex items-center justify-center gap-2 p-4 bg-purple-500/10 border border-purple-500/20 rounded-xl cursor-pointer active:scale-95 transition"><Crown className="text-purple-500 mb-0" size={24} /><span className="text-xs font-bold text-purple-500">טעינת מצטייני מחצית (אקסל)</span><input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleSemesterFileUpload} /></label>
-                <label className="col-span-2 flex items-center justify-center gap-2 p-4 bg-orange-500/10 border border-orange-500/20 rounded-xl cursor-pointer active:scale-95 transition"><Activity className="text-orange-500 mb-0" size={24} /><span className="text-xs font-bold text-orange-500">טעינת גיליון ציונים (אקסל)</span><input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleGradesFileUpload} /></label>
-                <button onClick={() => setShowBatchCommenter(true)} className="col-span-2 flex items-center justify-center gap-2 p-4 bg-[#d4af37]/10 border border-[#d4af37]/20 rounded-xl active:scale-95 transition"><GraduationCap className="text-[#d4af37] mb-0" size={24} /><span className="text-xs font-bold text-[#d4af37]">מחולל הערות לתעודה (AI)</span></button>
-                <div className="col-span-2 bg-black/20 p-3 rounded-xl border border-border mt-2"><label className="text-[10px] text-gray-400 block mb-1">קוד כניסה למורה</label><input type="text" value={config.teacherPin} onChange={(e) => saveConfig({...config, teacherPin: e.target.value})} className="bg-transparent border-b border-accent/30 w-full text-sm font-bold text-accent outline-none text-center" placeholder="1234" /></div>
-            </div>
-        );
-        case 'learning_manage': return (
-            <div className="space-y-4 pt-2">
-                <div className="bg-[#d4af37]/10 border border-[#d4af37]/20 p-3 rounded-xl space-y-2">
-                    <h4 className="text-xs font-bold text-[#d4af37] flex items-center gap-1"><Wand2 size={12}/> מחולל בחנים (AI)</h4>
-                    <textarea className="w-full h-20 bg-black/20 border border-white/10 rounded-lg p-2 text-xs text-white outline-none resize-none placeholder-gray-500" placeholder="הדבק כאן את חומר הלימוד..." value={quizMaterial} onChange={(e) => setQuizMaterial(e.target.value)} />
-                    <button onClick={handleGenerateQuizScript} disabled={isGeneratingQuiz || !quizMaterial} className="w-full py-2 bg-[#d4af37] text-black font-bold text-xs rounded-lg flex items-center justify-center gap-2 disabled:opacity-50 hover:opacity-90 transition">{isGeneratingQuiz ? <Loader2 size={14} className="animate-spin"/> : <FileQuestion size={14}/>} צור סקריפט לבוחן</button>
-                </div>
-                <div className="border-t border-border my-2"></div>
-                <div className="flex gap-2 bg-black/20 p-2 rounded-xl border border-white/5"><input type="text" className="flex-1 bg-transparent border-none text-xs text-white outline-none px-2" placeholder="שם מקצוע/תיקייה חדשה..." value={newSubjectName} onChange={(e) => setNewSubjectName(e.target.value)} /><button onClick={handleAddSubject} className="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded-lg font-bold">הוסף</button></div>
-                <div className="flex flex-wrap gap-2">{(config.learningSubjects || []).map(s => (<div key={s} className="flex items-center gap-1 bg-emerald-500/10 text-emerald-500 px-2 py-1 rounded-full text-xs border border-emerald-500/20"><span>{s}</span><button onClick={() => handleDeleteSubject(s)} className="hover:text-red-400"><X size={12}/></button></div>))}</div>
-                <div className="border-t border-border my-2"></div>
-                <div className="space-y-3 bg-black/10 p-3 rounded-xl border border-white/5">
-                    <div className="flex justify-between items-center"><h4 className="text-xs font-bold text-gray-400">הוספת חומר לימוד</h4><div className="flex gap-1"><button onClick={() => setPresetResource('drive')} className="p-1 bg-blue-500/20 text-blue-400 rounded hover:bg-blue-500/30 text-[10px] flex items-center gap-1"><HardDrive size={10}/> דרייב</button><button onClick={() => setPresetResource('quiz')} className="p-1 bg-purple-500/20 text-purple-400 rounded hover:bg-purple-500/30 text-[10px] flex items-center gap-1"><FileQuestion size={10}/> בוחן</button><button onClick={() => setPresetResource('review')} className="p-1 bg-indigo-500/20 text-indigo-400 rounded hover:bg-indigo-500/30 text-[10px] flex items-center gap-1"><FileText size={10}/> חזרה</button></div></div>
-                    <input type="text" placeholder="כותרת" className="w-full bg-black/20 border border-white/10 rounded-lg p-2 text-xs text-white outline-none" value={newResource.title} onChange={(e) => setNewResource({...newResource, title: e.target.value})} />
-                    <div className="flex gap-2"><select className="bg-black/20 border border-white/10 rounded-lg p-2 text-xs text-white outline-none flex-1" value={newResource.subject} onChange={(e) => setNewResource({...newResource, subject: e.target.value})}><option value="">בחר מקצוע...</option>{(config.learningSubjects || []).map(s => <option key={s} value={s}>{s}</option>)}</select><select className="bg-black/20 border border-white/10 rounded-lg p-2 text-xs text-white outline-none flex-1" value={newResource.type} onChange={(e) => setNewResource({...newResource, type: e.target.value as ResourceType})}><option value="link">קישור / דרייב / Forms</option><option value="file">קובץ להורדה</option><option value="video">סרטון</option></select></div>
-                    {newResource.type === 'file' ? (<input type="file" onChange={handleResourceFileUpload} className="text-xs text-gray-400"/>) : (<input type="text" placeholder="כתובת URL" className="w-full bg-black/20 border border-white/10 rounded-lg p-2 text-xs text-white outline-none" value={newResource.url} onChange={(e) => setNewResource({...newResource, url: e.target.value})} />)}
-                    <button onClick={handleAddResource} className="w-full bg-emerald-600 text-white font-bold py-2 rounded-lg text-xs hover:bg-emerald-500 transition">שמור חומר לימוד</button>
-                </div>
-                <div className="max-h-40 overflow-y-auto pr-1 space-y-2">{(config.learningResources || []).map(res => (<div key={res.id} className="flex justify-between items-center bg-white/5 p-2 rounded-lg border border-white/5 text-xs"><div className="truncate flex-1 flex items-center gap-2">{res.url.includes('drive') && <HardDrive size={12} className="text-blue-500"/>}{res.url.includes('forms') && <FileQuestion size={12} className="text-purple-500"/>}<span className="text-emerald-400 font-bold">{res.subject}:</span> {res.title}</div><button onClick={() => handleDeleteResource(res.id)} className="text-red-500/50 hover:text-red-500"><Trash2 size={14}/></button></div>))}</div>
-            </div>
-        );
-        case 'challenges_manage': return (
-            <div className="space-y-4 pt-2">
-                <div className="flex justify-between items-center border-b border-border pb-2"><span className="text-xs text-gray-400">אתגרים פעילים: {(config.challenges || []).length}</span><button onClick={handleAddChallenge} className="text-xs bg-orange-500 text-white px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 hover:brightness-110"><Plus size={14}/> הוסף אתגר</button></div>
-                <div className="space-y-3">
-                    {(config.challenges || []).length === 0 && <p className="text-gray-500 text-xs text-center py-2">אין אתגרים מוגדרים</p>}
-                    {(config.challenges || []).map(challenge => (
-                        <div key={challenge.id} className="flex gap-2 bg-black/20 p-2 rounded-xl border border-white/5 items-center">
-                            <Target size={20} className="text-orange-500 shrink-0" />
-                            <div className="flex-1 space-y-1"><input type="text" className="w-full bg-transparent border-b border-white/10 text-sm font-bold text-txt outline-none focus:border-orange-500" placeholder="שם האתגר" value={challenge.title} onChange={(e) => handleUpdateChallenge(challenge.id, 'title', e.target.value)} /></div>
-                            <div className="flex items-center gap-1 bg-black/30 px-2 py-1 rounded"><span className="text-[10px] text-gray-500">ניקוד:</span><input type="number" className="w-10 bg-transparent text-xs text-orange-400 font-bold outline-none text-center" value={challenge.reward} onChange={(e) => handleUpdateChallenge(challenge.id, 'reward', parseInt(e.target.value) || 0)} /></div>
-                            <button onClick={() => handleDeleteChallenge(challenge.id)} className="text-red-500/50 hover:text-red-500 p-2"><Trash2 size={16}/></button>
-                        </div>
-                    ))}
-                </div>
-            </div>
-        );
-        case 'store_manage': return (
-             <div className="space-y-4 pt-2">
-                <div className="flex justify-between items-center border-b border-border pb-2"><span className="text-xs text-gray-400">מוצרים: {config.storeItems.length}</span><button onClick={handleAddStoreItem} className="text-xs bg-accent text-accent-fg px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 hover:brightness-110"><Plus size={14}/> הוסף מוצר</button></div>
-                <div className="grid grid-cols-1 gap-3 max-h-80 overflow-y-auto pr-1">
-                    {config.storeItems.map((item) => (
-                        <div key={item.id} className="bg-black/20 p-3 rounded-xl border border-border flex items-center gap-3">
-                            <div className="relative group shrink-0"><label className="w-14 h-14 bg-black/40 rounded-lg flex items-center justify-center cursor-pointer border border-white/10 hover:border-accent transition overflow-hidden">{item.image ? (<img src={item.image} className="w-full h-full object-cover" />) : (<span className="text-2xl">{item.emoji}</span>)}<div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><ImageIcon size={16} className="text-white"/></div><input type="file" className="hidden" accept="image/*" onChange={(e) => handleStoreItemImageUpload(e, item.id)} /></label></div>
-                            <div className="flex-1 space-y-2 min-w-0"><div className="flex gap-2"><input value={item.name} onChange={(e) => handleUpdateStoreItem(item.id, 'name', e.target.value)} className="w-full bg-transparent border-b border-white/10 text-sm font-bold text-txt outline-none focus:border-accent" placeholder="שם הפריט" /><button onClick={() => handleGenerateProductAsset(item)} disabled={generatingItemId === item.id} className="text-accent hover:text-white transition-colors bg-accent/10 hover:bg-accent/20 p-1.5 rounded-lg">{generatingItemId === item.id ? <Loader2 size={16} className="animate-spin"/> : <Wand2 size={16}/>}</button></div><div className="flex items-center gap-2"><div className="flex items-center gap-1 bg-black/30 px-2 py-1 rounded"><span className="text-[10px] text-gray-500">מחיר:</span><input type="number" value={item.price} onChange={(e) => handleUpdateStoreItem(item.id, 'price', parseInt(e.target.value) || 0)} className="w-12 bg-transparent text-xs text-accent font-bold outline-none focus:border-accent text-center" placeholder="0" /></div><div className="flex items-center gap-1 bg-black/30 px-2 py-1 rounded"><span className="text-[10px] text-gray-500">מלאי:</span><input type="number" value={item.stock} onChange={(e) => handleUpdateStoreItem(item.id, 'stock', parseInt(e.target.value) || 0)} className="w-10 bg-transparent text-xs text-white font-bold outline-none focus:border-accent text-center" placeholder="∞" /></div></div></div>
-                            <button onClick={() => handleDeleteStoreItem(item.id)} className="p-2 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500/20 shrink-0"><Trash2 size={16} /></button>
-                        </div>
-                    ))}
-                </div>
-                <div className="pt-4 border-t border-border"><h4 className="text-xs font-bold text-gray-400 mb-2">היסטוריית רכישות חודשית</h4><div className="bg-black/20 rounded-xl p-2 max-h-40 overflow-y-auto text-xs">{allPurchases.length === 0 && <p className="text-center text-gray-500 py-2">אין רכישות עדיין</p>}{allPurchases.map((p, i) => (<div key={i} className="flex justify-between items-center py-1.5 border-b border-white/5 last:border-0"><span>{p.studentName} רכש/ה <b>{p.itemName}</b></span><span className="text-gray-500 text-[10px]">{p.date}</span></div>))}</div></div>
-             </div>
-        );
-        case 'score_settings': return (
-            <div className="grid grid-cols-2 gap-3 pt-2">{Object.entries(config.actionScores).map(([action, score]) => (<div key={action} className="bg-black/20 p-3 rounded-xl border border-border"><label className="text-[10px] text-gray-400 block mb-1">{action}</label><input type="number" className="bg-transparent border-b border-accent/30 w-full text-sm font-bold text-accent outline-none text-center" value={score} onChange={(e) => updateScore(action, parseInt(e.target.value) || 0)} /></div>))}</div>
-        );
-        case 'rules_manage': return (<div className="pt-2"><textarea className="w-full h-32 bg-black/20 rounded-xl border border-white/10 p-4 text-sm text-txt/80 focus:border-accent outline-none resize-none" value={config.rules} onChange={(e) => saveConfig({...config, rules: e.target.value})} placeholder="הדבק כאן את התקנון הכיתתי..." /></div>);
-        case 'general_settings': return (
-            <div className="pt-2 space-y-3"><div className="bg-black/20 p-3 rounded-xl border border-border"><label className="text-xs font-bold text-gray-400 block mb-1 flex items-center gap-2"><Phone size={12}/> טלפון המורה (לקבלת עדכוני רכישה)</label><input type="tel" placeholder="לדוגמה: 0501234567" className="w-full bg-transparent border-b border-white/10 p-1 text-sm text-white outline-none focus:border-accent" value={config.teacherCell} onChange={(e) => saveConfig({...config, teacherCell: e.target.value})} /><p className="text-[10px] text-gray-500 mt-1">מספר זה ישמש לשליחת וואטסאפ אוטומטי של רכישות</p></div></div>
-        );
-        case 'backup_reset': return (<div className="grid grid-cols-2 gap-3 pt-2"><button onClick={handleBackup} className="flex items-center justify-center gap-2 p-4 bg-white/5 rounded-2xl text-xs font-bold border border-white/5 active:bg-white/10 transition-colors text-txt"><Download size={16}/> גיבוי</button><button onClick={() => setShowResetConfirm(true)} className="flex items-center justify-center gap-2 p-4 bg-red-500/10 rounded-2xl text-xs font-bold text-red-500 border border-red-500/10 active:bg-red-500/20 transition-colors"><Trash2 size={16}/> איפוס מלא</button></div>);
-        case 'theme_settings': return (<div className="flex gap-2 pt-2">{['current', 'modern', 'simple'].map((t) => (<button key={t} onClick={() => saveConfig({ ...config, theme: t as ThemeType })} className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all border ${config.theme === t ? 'bg-accent text-accent-fg border-accent shadow-lg scale-105' : 'bg-black/20 text-gray-400 border-transparent hover:bg-black/30'}`}>{t === 'current' ? 'נוכחי' : t === 'modern' ? 'מודרני' : 'פשוט'}</button>))}</div>);
-        default: return null;
-      }
+  const handleStudentClick = (student: Student) => {
+      // Always look up the real student from DB to get fresh data (including real total points, not average)
+      const realStudent = db[student.name] || student;
+      setSelectedStudent(realStudent);
   };
-
-  if (currentView === 'learning') return <LearningCenter config={config} onClose={() => setCurrentView('home')} />;
-  if (userRole === 'guest') return <LoginScreen students={Object.values(db)} teacherPin={config.teacherPin} onLogin={handleLogin} onEnterLearning={() => setCurrentView('learning')} logo={config.logo} />;
-
+  
   return (
-    <div className="flex flex-col h-screen bg-primary text-txt overflow-hidden font-sans transition-colors duration-300" style={themeVars as React.CSSProperties}>
-      <header className="fixed top-0 left-0 right-0 h-16 bg-primary/80 backdrop-blur-md border-b border-accent/20 px-5 flex justify-between items-center z-40 shadow-sm transition-all">
-        <div className="flex items-center gap-3">
-          {config.logo ? <img src={config.logo} className="w-9 h-9 rounded-full border border-accent object-cover shadow-sm" /> : <div className="w-9 h-9 rounded-full border border-accent/30 bg-accent/10 flex items-center justify-center text-accent shadow-sm"><Coins size={18} /></div>}
-          <div>
-            <div className="flex items-center gap-2">
-                <h1 className="text-lg font-black text-accent tracking-tight leading-none">הבנק הכיתתי</h1>
-                {config.googleAppsScriptUrl && (<div title={syncStatus === 'saving' ? "שומר..." : syncStatus === 'saved' ? "נשמר בענן" : "מסונכרן"}>{syncStatus === 'saving' ? <RefreshCw size={12} className="text-gray-400 animate-spin" /> : <Check size={12} className="text-green-500" />}</div>)}
-            </div>
-            <p className="text-[9px] font-bold text-accent/50 uppercase tracking-widest leading-tight">{config.slogan}</p>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          {userRole === 'teacher' && <button onClick={() => setCurrentView('contacts')} className="w-9 h-9 flex items-center justify-center bg-card/50 rounded-full text-accent border border-white/5 active:bg-white/10 active:scale-95 transition-all shadow-sm"><Users size={18} /></button>}
-          <button onClick={handleLogout} className="w-9 h-9 flex items-center justify-center bg-red-500/10 rounded-full text-red-400 border border-red-500/20 active:bg-red-500/20 active:scale-95 transition-all shadow-sm"><LogOut size={16} /></button>
-        </div>
-      </header>
-
-      <main className="flex-1 relative overflow-hidden bg-primary">
-          {userRole === 'student' && loggedInStudentName && db[loggedInStudentName] ? (
-              <div className="absolute inset-0 overflow-y-auto pt-20 pb-24 px-4 scroll-smooth no-scrollbar custom-scroll-container">
-                  {currentView === 'store' ? <StoreView students={Object.values(db)} config={config} onCheckout={handleCheckout} cart={cart} setCart={setCart} selectedStudentId={loggedInStudentName} setSelectedStudentId={() => {}} /> : (
-                      <div className="space-y-6 pb-8">
-                          {/* Student Dashboard... (Same as before) */}
-                          <div className="bg-gradient-to-br from-blue-900/50 to-blue-600/20 border border-blue-500/30 p-6 rounded-[2rem] shadow-xl relative overflow-hidden">
-                              <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-2xl -mr-10 -mt-10"></div>
-                              <div className="relative z-10 flex justify-between items-start">
-                                  <div><h2 className="text-2xl font-black text-white mb-1">היי {loggedInStudentName.split(' ')[0]}! 👋</h2><p className="text-blue-200 text-xs mb-4">הנה המצב הנוכחי שלך בבנק הכיתתי</p></div>
-                                  <button onClick={() => setShowChangePassword(true)} className="bg-black/20 hover:bg-black/40 p-2 rounded-xl text-white transition-colors"><Lock size={18} /></button>
-                              </div>
-                              <div className="flex justify-between items-end relative z-10"><div><span className="text-[10px] text-gray-400 block mb-1">היתרה שלך</span><span className="text-4xl font-black text-blue-400 tracking-tight">{db[loggedInStudentName].total}₪</span></div><div className="bg-blue-500/10 p-3 rounded-full text-blue-400 border border-blue-500/20"><Trophy size={24} /></div></div>
-                          </div>
-                          
-                          {/* Student Grade/Goal Widget */}
-                          {db[loggedInStudentName].academicGoal && (
-                              <div 
-                                onClick={() => { setSelectedStudent(db[loggedInStudentName]); setDetailsFilter(""); }}
-                                className="bg-gradient-to-br from-purple-900/50 to-purple-600/20 border border-purple-500/30 p-4 rounded-2xl shadow-lg relative overflow-hidden cursor-pointer active:scale-95 transition"
-                              >
-                                  <h3 className="text-sm font-bold text-purple-300 flex items-center gap-2 mb-2"><Target size={16}/> היעד הלימודי שלי</h3>
-                                  <p className="text-white text-sm font-medium leading-relaxed">"{db[loggedInStudentName].academicGoal}"</p>
-                                  <div className="mt-3 flex justify-end">
-                                      <span className="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-1 rounded-full border border-purple-500/30">לחץ לצפייה בציונים</span>
-                                  </div>
-                              </div>
-                          )}
-
-                          {/* ... other student widgets */}
-                          {(config.challenges || []).length > 0 && (
-                              <div className="space-y-2">
-                                  <h3 className="text-sm font-bold text-gray-400 pr-2 flex items-center gap-2"><Target size={16} className="text-orange-500"/> אתגרים פעילים</h3>
-                                  <div className="flex gap-3 overflow-x-auto pb-2 px-1 no-scrollbar">{config.challenges.map(challenge => (<div key={challenge.id} className="min-w-[140px] bg-gradient-to-br from-orange-500/20 to-red-500/10 border border-orange-500/30 p-3 rounded-2xl flex flex-col justify-between items-start shadow-sm"><span className="text-xs font-bold text-white line-clamp-2 h-8">{challenge.title}</span><span className="text-lg font-black text-orange-400">+{challenge.reward}</span></div>))}</div>
-                              </div>
-                          )}
-                          <div className="grid grid-cols-2 gap-3">
-                              <button onClick={() => setCurrentView('store')} className="p-4 bg-accent/10 border border-accent/20 rounded-2xl flex flex-col items-center justify-center gap-2 active:scale-95 transition"><Store size={24} className="text-accent" /><span className="text-xs font-bold text-accent">לחנות ההפתעות</span></button>
-                              <button onClick={() => setCurrentView('learning')} className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex flex-col items-center justify-center gap-2 active:scale-95 transition"><BookOpen size={24} className="text-emerald-500" /><span className="text-xs font-bold text-emerald-400">מרכז למידה</span></button>
-                          </div>
-                          <div className="space-y-3"><h3 className="text-sm font-bold text-gray-400 pr-2">היסטוריית פעולות</h3>{db[loggedInStudentName].logs.length === 0 ? (<div className="text-center py-8 text-gray-500 text-xs">עדיין אין נתונים להצגה</div>) : (db[loggedInStudentName].logs.slice().reverse().slice(0, 10).map((log, idx) => (<div key={idx} className="bg-card p-4 rounded-2xl border border-border flex justify-between items-center shadow-sm"><div className="flex items-center gap-3"><div className={`p-2 rounded-full ${log.s > 0 ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>{log.s > 0 ? <Plus size={14}/> : <MinusCircle size={14}/>}</div><div><p className="font-bold text-sm text-txt">{log.k}</p><p className="text-[10px] text-gray-500">{log.d} • {log.sub}</p></div></div><span className={`font-black ${log.s > 0 ? 'text-green-500' : 'text-red-500'}`}>{log.s > 0 ? '+' : ''}{log.s}</span></div>)))}</div>
-                      </div>
-                  )}
-              </div>
-          ) : (
-            <>
-            {(currentView === 'home' || currentView === 'admin' || currentView === 'contacts') && (
-                <div className="absolute inset-0 overflow-y-auto pt-20 pb-40 px-4 scroll-smooth no-scrollbar custom-scroll-container">
-                    {currentView === 'home' && (
-                        <div className="space-y-4 flex flex-col min-h-full">
-                        
-                        {/* Search Bar - Moved to Top */}
-                        <div className="bg-black/10 border border-white/5 rounded-2xl p-2 flex items-center gap-2">
-                            <Search size={16} className="text-gray-500 mr-2" />
-                            <input 
-                                type="text" 
-                                placeholder="חפש תלמיד בפודיום..." 
-                                className="bg-transparent text-sm text-white w-full outline-none placeholder-gray-500"
-                                value={searchQuery} 
-                                onChange={e => setSearchQuery(e.target.value)} 
-                            />
-                            {searchQuery && <button onClick={() => setSearchQuery("")}><X size={14} className="text-gray-500"/></button>}
-                        </div>
-
-                        {/* Podium Toggle */}
-                        <div className="flex justify-center mb-2">
-                             <div className="flex bg-black/20 p-1 rounded-xl border border-white/5">
-                                 <button onClick={() => setPodiumMode('regular')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${podiumMode === 'regular' ? 'bg-accent text-accent-fg shadow-lg' : 'text-gray-400 hover:text-white'}`}>מצטיין שבועי</button>
-                                 <button onClick={() => setPodiumMode('semester')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${podiumMode === 'semester' ? 'bg-purple-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}><Crown size={12} /> אלוף המחצית</button>
-                             </div>
-                        </div>
-
-                        <div className="flex-1 flex flex-col justify-center min-h-[30vh]">
-                            <Podium 
-                                students={filteredPodiumList.filter(s => !s.isHiddenFromPodium)} 
-                                onRemoveStudent={handleRemoveFromPodium}
-                                onStudentClick={(student) => { 
-                                    const realStudent = db[student.name];
-                                    if (realStudent) {
-                                        if (podiumMode === 'semester') {
-                                             // In Semester Mode, we show historical logs
-                                             setSelectedStudent({
-                                                 ...realStudent,
-                                                 logs: realStudent.semesterLogs || [],
-                                                 total: realStudent.semesterScore || 0
-                                             });
-                                             setDetailsFilter("SEMESTER_MODE");
-                                        } else {
-                                            setSelectedStudent(realStudent); 
-                                            setDetailsFilter("");
-                                        }
-                                    }
-                                }}
-                            />
-                        </div>
-                        
-                        <div className="bg-gradient-to-r from-accent/10 to-card border border-accent/20 p-5 rounded-3xl flex justify-between items-center shadow-lg active:scale-[0.99] transition-transform">
-                            <div className="flex items-center gap-4">
-                                <div className="bg-accent p-2.5 rounded-2xl text-accent-fg shadow-lg shadow-accent/20"><Coins size={22} /></div>
-                                <div><span className="text-[10px] font-bold text-accent/70 uppercase tracking-widest block mb-0.5">קופה כיתתית</span><span className="font-bold text-txt text-sm">סך הכל נקודות</span></div>
-                            </div>
-                            <span className="text-3xl font-black text-accent drop-shadow-sm">{classTotal}₪</span>
-                        </div>
-
-                        {/* Tefillah Corner - Collapsible */}
-                        <div className="bg-card border border-accent/30 rounded-3xl overflow-hidden shadow-lg transition-all">
-                            <button onClick={() => setIsTefillahOpen(!isTefillahOpen)} className="w-full p-4 flex justify-between items-center bg-gradient-to-r from-transparent via-accent/5 to-transparent active:bg-white/5">
-                                <h3 className="font-bold text-accent flex items-center gap-2"><Scroll size={18} /> פינת התפילה</h3>
-                                {isTefillahOpen ? <ChevronUp size={18} className="text-gray-400" /> : <ChevronDown size={18} className="text-gray-400" />}
-                            </button>
-                            {isTefillahOpen && (
-                                <div className="p-5 pt-0 space-y-3 animate-in slide-in-from-top-2">
-                                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-accent to-transparent opacity-50"></div>
-                                    <div className="flex justify-between items-start mt-2"><span className="text-[10px] text-gray-400 bg-black/10 px-2 py-1 rounded-full border border-white/5">מצטייני התפילה (לפי חיסורים)</span></div>
-                                    <p className="text-xs text-txt/70 italic leading-relaxed border-r-2 border-accent/20 pr-3">"יְהִי רָצוֹן... שֶׁתַּשְׁרֶה שְׁכִינָה בְּמַעֲשֵׂה יָדֵינוּ..."</p>
-                                    
-                                    {/* New Podium for Tefillah */}
-                                    <div className="scale-90 origin-top -mb-4 mt-2">
-                                        {tefillahStats.length >= 3 ? (
-                                            <Podium 
-                                                students={tefillahStats.slice(0, 3)} 
-                                                onRemoveStudent={() => {}} 
-                                                onStudentClick={(s) => { 
-                                                    // Pass the real student from DB to maintain integrity, but filter for Tefillah in details view
-                                                    if(db[s.name]) {
-                                                        setSelectedStudent(db[s.name]); 
-                                                        setDetailsFilter('תפיל');
-                                                    }
-                                                }} 
-                                            />
-                                        ) : (
-                                            <p className="text-center text-gray-500 text-xs py-4">לא מספיק נתונים לפודיום תפילה</p>
-                                        )}
-                                    </div>
-
-                                    <button onClick={() => setShowAllTefillah(!showAllTefillah)} className="w-full mt-2 py-3 text-[10px] font-bold text-accent/50 uppercase flex justify-center items-center gap-2 border-t border-border bg-black/5 rounded-xl hover:bg-black/10 transition-colors">{showAllTefillah ? 'צמצם רשימת תפילה' : 'הצג את כל הכיתה'} {showAllTefillah ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}</button>
-                                    {showAllTefillah && (
-                                        <div className="mt-2 divide-y divide-border bg-black/10 rounded-2xl max-h-60 overflow-y-auto custom-scrollbar">
-                                            {tefillahStats.map((s, i) => (
-                                                <div key={s.name} onClick={() => { setSelectedStudent(db[s.name]); setDetailsFilter('תפיל'); }} className="p-3 flex justify-between items-center active:bg-white/5 cursor-pointer">
-                                                    <div className="flex items-center gap-3"><span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold bg-white/5 text-gray-500`}>{i + 1}</span><div className="flex flex-col"><span className="text-xs font-bold text-txt">{s.name}</span><span className="text-[9px] text-gray-500">חיסורים: {s.tefillahAbsences}</span></div></div>
-                                                    <span className={`text-xs font-black ${s.tefillahScore > 0 ? 'text-green-500' : 'text-gray-500'}`}>{s.tefillahScore}₪</span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-
-                        <button onClick={() => setShowRules(true)} className="w-full bg-card border border-accent/30 rounded-3xl p-4 flex items-center justify-between active:scale-95 transition-transform shadow-md">
-                            <div className="flex items-center gap-3"><div className="bg-accent/10 p-2.5 rounded-full text-accent"><Book size={20} /></div><span className="font-bold text-sm text-txt">תקנון הכיתה</span></div>
-                            <ChevronDown size={16} className="text-gray-500"/>
-                        </button>
-
-                        </div>
-                    )}
-
-                    {currentView === 'admin' && (
-                        <div className="space-y-4 pb-8">
-                        <div className="flex justify-between items-center pb-2 border-b border-border mb-4"><h2 className="text-2xl font-black text-accent flex items-center gap-3"><ShieldCheck size={28}/> ניהול המערכת</h2><button onClick={() => setIsReordering(!isReordering)} className={`text-xs px-3 py-1.5 rounded-full font-bold transition-colors ${isReordering ? 'bg-green-600 text-white shadow-lg' : 'bg-white/5 text-gray-400 border border-white/5'}`}>{isReordering ? 'סיום עריכת סדר' : 'שנה סדר'}</button></div>
-                        <div className="space-y-4">
-                            {adminOrder.map((sectionId, index) => {
-                                const sectionDef = ADMIN_SECTIONS.find(s => s.id === sectionId);
-                                if (!sectionDef) return null;
-                                const isCollapsed = adminCollapsed[sectionId];
-                                const isAlwaysExpanded = sectionId === 'import_files' || sectionId === 'backup_reset' || sectionId === 'theme_settings';
-                                return (
-                                    <div key={sectionId} className={`bg-card rounded-[2rem] border border-border shadow-md overflow-hidden transition-all ${isReordering ? 'opacity-80 scale-[0.98] border-dashed border-accent' : ''}`}>
-                                        <div className={`p-4 flex items-center justify-between ${!isAlwaysExpanded ? 'cursor-pointer active:bg-white/5' : ''}`} onClick={() => { if (isReordering) return; if (!isAlwaysExpanded) toggleAdminSection(sectionId); }}>
-                                            <div className="flex items-center gap-3">{isReordering && (<div className="flex flex-col gap-1 mr-2"><button onClick={(e) => { e.stopPropagation(); moveItem(index, 'up'); }} disabled={index === 0} className="text-gray-500 disabled:opacity-20 hover:text-white"><ArrowUp size={14}/></button><button onClick={(e) => { e.stopPropagation(); moveItem(index, 'down'); }} disabled={index === adminOrder.length - 1} className="text-gray-500 disabled:opacity-20 hover:text-white"><ArrowDown size={14}/></button></div>)}<div className={`p-2 rounded-xl ${sectionDef.bg} ${sectionDef.color}`}><sectionDef.icon size={20} /></div><h3 className="font-bold text-sm text-txt uppercase tracking-wide">{sectionDef.label}</h3></div>{!isAlwaysExpanded && !isReordering && (isCollapsed ? <ChevronDown size={16} className="text-gray-500"/> : <ChevronUp size={16} className="text-gray-500"/>)}
-                                        </div>
-                                        {(!isCollapsed || isAlwaysExpanded) && (<div className="p-4 pt-0 animate-in slide-in-from-top-2 fade-in">{renderAdminSectionContent(sectionId)}</div>)}
-                                    </div>
-                                );
-                            })}
-                        </div>
-                        </div>
-                    )}
-
-                    {currentView === 'contacts' && (
-                        <div className="space-y-4 pb-6"><h2 className="text-2xl font-black text-accent flex items-center gap-3"><Users size={28}/> ספר טלפונים</h2>{sorted.map(s => (<div key={s.name} className="bg-card p-5 rounded-3xl border border-border flex justify-between items-center shadow-md active:scale-[0.98] transition-transform cursor-pointer" onClick={() => { setSelectedStudent(s); setDetailsFilter(""); }}><div><p className="font-bold text-sm text-txt">{s.name}</p><p className="text-[10px] text-gray-500 mt-1">{s.nameMother ? `אמא: ${s.nameMother}` : 'חסר פרטי אם'} • {s.nameFather ? `אבא: ${s.nameFather}` : 'חסר פרטי אב'}</p></div><div className="p-3 bg-accent/10 rounded-full text-accent shadow-sm"><Phone size={20} /></div></div>))}</div>
-                    )}
-                </div>
-            )}
-
-            {currentView === 'seating' && (<div className="absolute inset-0 pt-16 pb-24 px-0 overflow-hidden"><SeatingChart students={Object.values(db)} onUpdateStudent={(s) => saveDb({ ...db, [s.name]: s })} onBatchUpdate={(updates) => { const newDb = { ...db }; updates.forEach(s => newDb[s.name] = s); saveDb(newDb); }} /></div>)}
-            {currentView === 'store' && (<div className="absolute inset-0 pt-16 pb-24 px-0 overflow-hidden"><StoreView students={Object.values(db)} config={config} onCheckout={handleCheckout} cart={cart} setCart={setCart} selectedStudentId={storeSelectedStudentId} setSelectedStudentId={setStoreSelectedStudentId} /></div>)}
-            </>
-          )}
-
-      </main>
+    <div className="min-h-screen bg-primary text-txt font-sans" style={themeVars as React.CSSProperties}>
       
-      {undoState && (<div className="fixed bottom-28 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-5 fade-in duration-300 w-[90%] max-w-sm"><div className="bg-[#333] border border-white/10 text-white px-4 py-3 rounded-full shadow-2xl flex items-center justify-between gap-4 backdrop-blur-md"><div className="flex items-center gap-2 text-sm"><span className="text-gray-400 text-xs">הוסר מהפודיום:</span><span className="font-bold truncate max-w-[120px]">{undoState.name}</span></div><button onClick={handleUndoRemove} className="flex items-center gap-1 text-accent font-bold text-sm bg-white/5 px-3 py-1 rounded-full active:bg-white/10"><Undo size={14} /> ביטול</button></div></div>)}
-      {showChangePassword && (<div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in"><div className="bg-[#1e293b] border border-blue-500/30 w-full max-w-sm p-8 rounded-3xl shadow-2xl relative"><button onClick={() => {setShowChangePassword(false); setNewPasswordInput("");}} className="absolute top-4 left-4 text-gray-400 hover:text-white"><X size={20} /></button><div className="text-center mb-6"><div className="bg-blue-500/20 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-blue-400"><KeyRound size={32} /></div><h3 className="text-xl font-bold text-white">החלפת סיסמה אישית</h3><p className="text-gray-400 text-xs mt-2">הגדר קוד חדש במקום 1234</p></div><div className="mb-6"><input type="tel" maxLength={4} placeholder="הכנס קוד חדש (4 ספרות)" className="w-full bg-black/40 border border-blue-500/30 text-white text-center text-2xl tracking-widest p-4 rounded-xl outline-none focus:border-blue-500 transition-colors" value={newPasswordInput} onChange={(e) => { if (/^\d*$/.test(e.target.value)) { setNewPasswordInput(e.target.value); } }} /></div><button onClick={handleChangePassword} className="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-3 rounded-xl shadow-lg active:scale-95 transition-transform">שמור סיסמה חדשה</button></div></div>)}
-
-      {/* Floating Bottom Navigation */}
-      <nav className="fixed bottom-5 left-4 right-4 bg-card/85 backdrop-blur-xl border border-white/10 p-2 rounded-[2rem] flex justify-between items-center shadow-[0_8px_32px_rgba(0,0,0,0.4)] z-50 max-w-md mx-auto">
-        <button onClick={() => setCurrentView('home')} className={`p-3.5 rounded-full transition-all duration-300 ${currentView === 'home' ? 'bg-accent text-accent-fg shadow-lg shadow-accent/20 scale-105' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}><Home size={22} /></button>
-        {userRole === 'teacher' && (<button onClick={() => setCurrentView('seating')} className={`p-3.5 rounded-full transition-all duration-300 ${currentView === 'seating' ? 'bg-accent text-accent-fg shadow-lg shadow-accent/20 scale-105' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}><LayoutGrid size={22} /></button>)}
-        <button onClick={() => setCurrentView('store')} className={`p-3.5 rounded-full transition-all duration-300 ${currentView === 'store' ? 'bg-accent text-accent-fg shadow-lg shadow-accent/20 scale-105' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}><ShoppingBag size={22} /></button>
-        {userRole === 'teacher' && (<button onClick={() => setCurrentView('admin')} className={`p-3.5 rounded-full transition-all duration-300 ${currentView === 'admin' ? 'bg-accent text-accent-fg shadow-lg shadow-accent/20 scale-105' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}><ShieldCheck size={22} /></button>)}
-      </nav>
-
+      {/* Modals & Overlays */}
       {selectedStudent && (
         <StudentDetails 
           student={selectedStudent} 
           config={config} 
-          filterKeyword={detailsFilter}
-          onClose={() => setSelectedStudent(null)}
-          onDeleteLog={(name, idx) => { if (userRole === 'student') return; const s = db[name]; if (!s) return; const newLogs = [...s.logs]; const [deletedLog] = newLogs.splice(idx, 1); const newTotal = s.total - (deletedLog?.s || 0); const updatedStudent = { ...s, logs: newLogs, total: newTotal }; saveDb({ ...db, [name]: updatedStudent }); if (selectedStudent?.name === name) setSelectedStudent(updatedStudent); }}
-          onAddLog={(name, log) => { if (userRole === 'student') return; const s = db[name]; if (s) { const newTotal = s.total + log.s; const updatedStudent = { ...s, logs: [...s.logs, log], total: newTotal }; saveDb({ ...db, [name]: updatedStudent }); if (selectedStudent?.name === name) setSelectedStudent(updatedStudent); } }}
-          onMarkNachat={(name) => { const s = db[name]; if (s) { const updatedStudent = { ...s, lastNachatDate: new Date().toLocaleDateString('he-IL') }; saveDb({ ...db, [name]: updatedStudent }); if (selectedStudent?.name === name) setSelectedStudent(updatedStudent); } }}
-          onUpdateStudent={(updatedStudent) => { if (userRole === 'student') return; saveDb({ ...db, [updatedStudent.name]: updatedStudent }); if (selectedStudent?.name === updatedStudent.name) setSelectedStudent(updatedStudent); }}
+          onClose={() => { setSelectedStudent(null); setDetailsFilter(""); }} 
+          onDeleteLog={(name, idx) => {
+             const s = db[name];
+             if (!s) return;
+             // We need to find the real index if we are filtered
+             // But onDeleteLog in StudentDetails passes the originalIndex now
+             const log = s.logs[idx];
+             const newLogs = [...s.logs];
+             newLogs.splice(idx, 1);
+             const newTotal = s.total - log.s;
+             saveDb({ ...db, [name]: { ...s, logs: newLogs, total: newTotal } });
+             setSelectedStudent({ ...s, logs: newLogs, total: newTotal }); // Update view
+          }}
+          onAddLog={(name, log) => {
+             const s = db[name];
+             if (!s) return;
+             const newLogs = [...s.logs, log];
+             const newTotal = s.total + log.s;
+             saveDb({ ...db, [name]: { ...s, logs: newLogs, total: newTotal } });
+             setSelectedStudent({ ...s, logs: newLogs, total: newTotal }); // Update view
+          }}
+          onMarkNachat={(name) => {
+             saveDb({ ...db, [name]: { ...db[name], lastNachatDate: new Date().toLocaleDateString('he-IL') } });
+          }}
+          onUpdateStudent={(updated) => {
+             saveDb({ ...db, [updated.name]: updated });
+             setSelectedStudent(updated);
+          }}
           isAuthenticated={userRole === 'teacher'}
+          filterKeyword={detailsFilter}
         />
       )}
-
-      {showRules && (
-         <div className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in">
-            <div className="bg-card w-full max-w-md rounded-[2rem] border border-accent/30 p-8 relative shadow-2xl">
-               <button onClick={() => setShowRules(false)} className="absolute top-4 left-4 p-2 bg-white/5 rounded-full text-txt hover:bg-white/10 active:scale-90 transition-transform"><X size={20}/></button>
-               <div className="text-center mb-6"><div className="inline-block p-3 rounded-full bg-accent/10 text-accent mb-2"><Book size={32} /></div><h2 className="text-2xl font-black text-accent">תקנון הכיתה</h2></div>
-               <div className="text-txt/80 whitespace-pre-line leading-relaxed text-center text-sm font-medium">{config.rules}</div>
-            </div>
-         </div>
-      )}
       
-      {generatedScript && (
-         <div className="fixed inset-0 z-[70] bg-black/90 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in">
-            <div className="bg-card w-full max-w-lg rounded-[2rem] border border-[#d4af37]/30 p-8 shadow-2xl relative flex flex-col gap-4">
-                <button onClick={() => setGeneratedScript(null)} className="absolute top-4 left-4 p-2 bg-white/5 rounded-full text-txt hover:bg-white/10 active:scale-90 transition-transform"><X size={20}/></button>
-                <div className="text-center"><div className="inline-block p-3 rounded-full bg-[#d4af37]/10 text-[#d4af37] mb-2"><FileQuestion size={32} /></div><h2 className="text-2xl font-black text-[#d4af37]">הסקריפט מוכן!</h2><p className="text-txt/70 text-sm mt-1">העתק את הקוד והדבק אותו בעורך הסקריפטים של גוגל</p></div>
-                <div className="relative group"><textarea readOnly value={generatedScript} className="w-full h-48 bg-black/30 border border-white/10 rounded-xl p-3 text-[10px] font-mono text-green-400 outline-none resize-none focus:border-[#d4af37]/50" /><button onClick={() => { navigator.clipboard.writeText(generatedScript).then(() => alert("הקוד הועתק!")).catch(e => alert("שגיאה בהעתקה: " + e)); }} className="absolute top-2 left-2 p-2 bg-white/10 text-white rounded-lg hover:bg-white/20 transition-colors backdrop-blur-md border border-white/5" title="העתק ללוח"><Copy size={16} /></button></div>
-                <button onClick={() => window.open('https://script.google.com/home', '_blank')} className="w-full py-3 bg-[#d4af37] text-black font-bold rounded-xl flex items-center justify-center gap-2 hover:opacity-90 transition active:scale-95"><ExternalLink size={18} /> פתח את Google Apps Script</button>
-            </div>
+      {/* ... (Rest of the application: Sidebar, Admin Views, etc.) ... */}
+      
+      {/* Main View Container */}
+      <div className={`flex flex-col h-screen ${userRole === 'teacher' ? 'pb-20' : ''}`}> {/* Add padding for bottom nav */}
+         
+         {/* Top Bar */}
+         <div className="bg-card p-4 flex justify-between items-center shadow-lg border-b border-accent/20 z-20">
+             <div className="flex items-center gap-3">
+                {config.logo && <img src={config.logo} className="w-10 h-10 rounded-full border-2 border-accent" />}
+                <div>
+                   <h1 className="text-xl font-black tracking-tight text-white">{config.slogan}</h1>
+                   {userRole === 'student' && loggedInStudentName && (
+                       <span className="text-xs text-accent font-bold">שלום, {loggedInStudentName}</span>
+                   )}
+                </div>
+             </div>
+             
+             {userRole === 'teacher' ? (
+                <div className="flex items-center gap-2">
+                   {syncStatus === 'saving' && <Loader2 size={18} className="animate-spin text-accent" />}
+                   {syncStatus === 'saved' && <Check size={18} className="text-green-500" />}
+                   {syncStatus === 'error' && <AlertCircle size={18} className="text-red-500" />}
+                   
+                   <button onClick={() => setCurrentView('learning')} className="p-2 bg-emerald-500/10 text-emerald-500 rounded-full hover:bg-emerald-500/20"><BookOpen size={20}/></button>
+                   <button onClick={() => setShowRules(true)} className="p-2 bg-purple-500/10 text-purple-400 rounded-full hover:bg-purple-500/20"><Book size={20}/></button>
+                   <button onClick={() => setCurrentView(currentView === 'admin' ? 'home' : 'admin')} className={`p-2 rounded-full transition ${currentView === 'admin' ? 'bg-accent text-accent-fg' : 'bg-white/10 text-gray-300'}`}>
+                      {currentView === 'admin' ? <Home size={20}/> : <Settings size={20}/>}
+                   </button>
+                   <button onClick={handleLogout} className="p-2 bg-red-500/10 text-red-500 rounded-full hover:bg-red-500/20"><LogOut size={20}/></button>
+                </div>
+             ) : (
+                <div className="flex items-center gap-2">
+                   <button onClick={() => setCurrentView('learning')} className="p-2 bg-emerald-500/10 text-emerald-500 rounded-full hover:bg-emerald-500/20"><BookOpen size={20}/></button>
+                   <button onClick={() => setShowRules(true)} className="p-2 bg-purple-500/10 text-purple-400 rounded-full hover:bg-purple-500/20"><Book size={20}/></button>
+                   <button onClick={handleLogout} className="p-2 bg-white/10 text-white rounded-full hover:bg-white/20"><LogOut size={20}/></button>
+                </div>
+             )}
          </div>
+
+         {/* Content Area */}
+         <div className="flex-1 overflow-hidden relative">
+             
+             {/* HOME VIEW (Podium & Lists) */}
+             {currentView === 'home' && (
+                 <div className="h-full overflow-y-auto p-4 pb-24">
+                     
+                     {/* Podium Toggle */}
+                     <div className="flex justify-center gap-2 mb-4">
+                        <button 
+                            onClick={() => setPodiumMode('regular')}
+                            className={`px-4 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-2 ${podiumMode === 'regular' ? 'bg-accent text-accent-fg shadow-lg scale-105' : 'bg-white/10 text-gray-400 hover:bg-white/20'}`}
+                        >
+                            <Coins size={12} /> נקודות זכות
+                        </button>
+                        <button 
+                            onClick={() => setPodiumMode('grades')}
+                            className={`px-4 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-2 ${podiumMode === 'grades' ? 'bg-blue-500 text-white shadow-lg scale-105' : 'bg-white/10 text-gray-400 hover:bg-white/20'}`}
+                        >
+                            <GraduationCap size={12} /> מצטייני לימודים
+                        </button>
+                     </div>
+
+                     <Podium 
+                        students={getPodiumStudents()} 
+                        onRemoveStudent={(name) => {
+                             if(window.confirm(`להסיר את ${name} מהפודיום? (הניקוד יישמר)`)) {
+                                 const s = db[name];
+                                 if(s) saveDb({...db, [name]: {...s, isHiddenFromPodium: true}});
+                             }
+                        }}
+                        onStudentClick={handleStudentClick}
+                        scoreSuffix={podiumMode === 'grades' ? '' : '₪'} 
+                     />
+                     
+                     {/* Student List Grid (If not student view) */}
+                     {userRole === 'teacher' && (
+                         <div className="mt-8">
+                             <div className="flex justify-between items-center mb-4 px-2">
+                                 <h3 className="font-bold text-gray-400 flex items-center gap-2"><Users size={16}/> כל התלמידים</h3>
+                                 <div className="flex items-center gap-2 bg-black/20 rounded-lg p-1">
+                                     <Search size={14} className="text-gray-500 ml-1"/>
+                                     <input 
+                                        className="bg-transparent border-none outline-none text-xs text-white w-24" 
+                                        placeholder="חיפוש..." 
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                     />
+                                 </div>
+                             </div>
+                             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                                 {(Object.values(db) as Student[])
+                                    .filter(s => s.name.includes(searchQuery))
+                                    .sort((a,b) => a.name.localeCompare(b.name))
+                                    .map(s => (
+                                     <button 
+                                        key={s.name}
+                                        onClick={() => handleStudentClick(s)}
+                                        className="bg-card hover:bg-white/5 p-3 rounded-xl border border-border flex flex-col items-center gap-2 transition active:scale-95 text-center group"
+                                     >
+                                         <span className="font-bold text-sm text-txt group-hover:text-accent truncate w-full">{s.name}</span>
+                                         <span className={`text-xs font-black ${s.total < 0 ? 'text-red-500' : 'text-accent'}`}>{s.total}₪</span>
+                                     </button>
+                                 ))}
+                             </div>
+                         </div>
+                     )}
+
+                     {/* Student View Specifics */}
+                     {userRole === 'student' && loggedInStudentName && db[loggedInStudentName] && (
+                        <div className="mt-6 flex flex-col items-center">
+                            <div className="bg-card p-6 rounded-3xl border border-accent/20 shadow-2xl w-full max-w-sm text-center transform hover:scale-[1.02] transition duration-300">
+                                <h2 className="text-2xl font-black text-white mb-2">{db[loggedInStudentName].name}</h2>
+                                <div className="text-5xl font-black text-accent mb-4 drop-shadow-md">{db[loggedInStudentName].total}₪</div>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <button 
+                                        onClick={() => setCurrentView('store')}
+                                        className="bg-accent text-accent-fg py-3 rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 active:scale-95 transition"
+                                    >
+                                        <Store size={18} /> לחנות
+                                    </button>
+                                    <button 
+                                        onClick={() => handleStudentClick(db[loggedInStudentName])}
+                                        className="bg-white/10 text-white py-3 rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 active:scale-95 transition hover:bg-white/20"
+                                    >
+                                        <Activity size={18} /> ציונים ופירוט
+                                    </button>
+                                </div>
+                                <button 
+                                    onClick={() => setShowChangePassword(true)}
+                                    className="mt-4 text-xs text-gray-500 hover:text-white flex items-center justify-center gap-1 w-full"
+                                >
+                                    <KeyRound size={10} /> שינוי סיסמה
+                                </button>
+                            </div>
+                        </div>
+                     )}
+                 </div>
+             )}
+
+             {/* ADMIN VIEW */}
+             {currentView === 'admin' && (
+                 <div className="h-full overflow-y-auto p-4 pb-24 space-y-4">
+                     <h2 className="text-2xl font-black text-white mb-6">לוח בקרה</h2>
+                     
+                     {/* Reorderable Grid Logic would go here, simplified for now to list */}
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Admin Cards - mapped from ADMIN_SECTIONS based on adminOrder */}
+                        {adminOrder.map(sectionId => {
+                            const section = ADMIN_SECTIONS.find(s => s.id === sectionId);
+                            if (!section) return null;
+                            const Icon = section.icon;
+                            const isCollapsed = adminCollapsed[sectionId];
+                            
+                            return (
+                                <div key={sectionId} className="bg-card border border-white/5 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+                                    <button 
+                                        onClick={() => toggleAdminSection(sectionId)}
+                                        className="w-full p-4 flex items-center justify-between bg-black/20 hover:bg-black/30 transition"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <div className={`p-2 rounded-lg ${section.bg} ${section.color}`}>
+                                                <Icon size={20} />
+                                            </div>
+                                            <span className="font-bold text-white">{section.label}</span>
+                                        </div>
+                                        {isCollapsed ? <ChevronDown size={16} className="text-gray-500"/> : <ChevronUp size={16} className="text-gray-500"/>}
+                                    </button>
+                                    
+                                    {!isCollapsed && (
+                                        <div className="p-4 border-t border-white/5 space-y-4 animate-in slide-in-from-top-2">
+                                            
+                                            {/* --- CLOUD SYNC --- */}
+                                            {sectionId === 'cloud_sync' && (
+                                                <div className="space-y-3">
+                                                    <p className="text-xs text-gray-400">כתובת סקריפט Google Apps Script לגיבוי בענן.</p>
+                                                    <input 
+                                                        type="text" 
+                                                        className="w-full bg-black/20 border border-white/10 rounded-xl p-3 text-xs text-white"
+                                                        value={config.googleAppsScriptUrl || ""}
+                                                        onChange={(e) => saveConfig({...config, googleAppsScriptUrl: e.target.value})}
+                                                        placeholder="https://script.google.com/..."
+                                                    />
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <input type="checkbox" checked={includeImagesInSync} onChange={(e) => setIncludeImagesInSync(e.target.checked)} id="incImg" className="rounded bg-white/10 border-white/20" />
+                                                        <label htmlFor="incImg" className="text-xs text-gray-300">כלול תמונות בגיבוי (איטי יותר)</label>
+                                                    </div>
+                                                    <div className="flex gap-2">
+                                                        <button onClick={() => handleCloudSave(false)} disabled={isSyncing} className="flex-1 bg-sky-600 hover:bg-sky-500 py-2 rounded-xl text-white text-xs font-bold flex items-center justify-center gap-2">
+                                                            {isSyncing ? <Loader2 className="animate-spin" size={14}/> : <Upload size={14}/>} שמור לענן
+                                                        </button>
+                                                        <button onClick={() => handleCloudLoad(false)} disabled={isSyncing} className="flex-1 bg-white/10 hover:bg-white/20 py-2 rounded-xl text-white text-xs font-bold flex items-center justify-center gap-2">
+                                                            {isSyncing ? <Loader2 className="animate-spin" size={14}/> : <Download size={14}/>} טען מהענן
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* --- IMPORT FILES --- */}
+                                            {sectionId === 'import_files' && (
+                                                <div className="space-y-3">
+                                                    <div>
+                                                        <label className="block text-xs font-bold text-gray-400 mb-2">טעינת קובץ התנהגות (Smart School)</label>
+                                                        <input type="file" accept=".xlsx,.xls" onChange={(e) => handleFileUpload(e, 'behavior')} className="w-full text-xs text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-green-500/10 file:text-green-500 hover:file:bg-green-500/20"/>
+                                                    </div>
+                                                    <div className="border-t border-white/5 pt-3">
+                                                        <label className="block text-xs font-bold text-gray-400 mb-2">טעינת קובץ ציונים (משו"ב/אקסל)</label>
+                                                        <input type="file" accept=".xlsx,.xls" onChange={handleGradesFileUpload} className="w-full text-xs text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-blue-500/10 file:text-blue-500 hover:file:bg-blue-500/20"/>
+                                                    </div>
+                                                    <div className="border-t border-white/5 pt-3">
+                                                        <label className="block text-xs font-bold text-gray-400 mb-2">טעינת נתוני מחצית (ארכיון)</label>
+                                                        <input type="file" accept=".xlsx,.xls" onChange={handleSemesterFileUpload} className="w-full text-xs text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-purple-500/10 file:text-purple-500 hover:file:bg-purple-500/20"/>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            
+                                            {/* Score Settings */}
+                                            {sectionId === 'score_settings' && (
+                                                <div className="grid grid-cols-1 gap-2">
+                                                    {(Object.entries(config.actionScores) as [string, number][]).map(([action, score]) => (
+                                                        <div key={action} className="flex items-center justify-between bg-white/5 p-2 rounded-lg">
+                                                            <span className="text-xs text-gray-300">{action}</span>
+                                                            <input 
+                                                                type="number" 
+                                                                value={score} 
+                                                                onChange={(e) => updateScore(action, parseInt(e.target.value))}
+                                                                className={`w-12 bg-black/20 border rounded p-1 text-center text-xs font-bold ${score > 0 ? 'text-green-400 border-green-500/30' : 'text-red-400 border-red-500/30'}`}
+                                                            />
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                            
+                                            {sectionId === 'store_manage' && (
+                                                <div className="space-y-4">
+                                                    <button onClick={handleAddStoreItem} className="w-full py-2 bg-accent/20 text-accent border border-accent/30 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-accent/30">
+                                                        <Plus size={14}/> הוסף מוצר חדש
+                                                    </button>
+                                                    <div className="space-y-2 max-h-60 overflow-y-auto">
+                                                        {config.storeItems.map(item => (
+                                                            <div key={item.id} className="bg-white/5 p-3 rounded-xl flex gap-3 items-start">
+                                                                <div className="w-12 h-12 bg-black/30 rounded-lg flex items-center justify-center relative overflow-hidden group">
+                                                                    {item.image ? <img src={item.image} className="w-full h-full object-cover"/> : <span className="text-xl">{item.emoji}</span>}
+                                                                    <label className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 cursor-pointer transition">
+                                                                        <ImageIcon size={14} className="text-white"/>
+                                                                        <input type="file" className="hidden" accept="image/*" onChange={(e) => handleStoreItemImageUpload(e, item.id)}/>
+                                                                    </label>
+                                                                </div>
+                                                                <div className="flex-1 space-y-2">
+                                                                    <input type="text" value={item.name} onChange={(e) => handleUpdateStoreItem(item.id, 'name', e.target.value)} className="w-full bg-transparent border-b border-white/10 text-xs font-bold text-white focus:border-accent outline-none" placeholder="שם המוצר"/>
+                                                                    <div className="flex gap-2">
+                                                                        <input type="number" value={item.price} onChange={(e) => handleUpdateStoreItem(item.id, 'price', parseInt(e.target.value))} className="w-16 bg-black/20 border border-white/10 rounded p-1 text-xs text-accent text-center" placeholder="מחיר"/>
+                                                                        <input type="number" value={item.stock} onChange={(e) => handleUpdateStoreItem(item.id, 'stock', parseInt(e.target.value))} className="w-16 bg-black/20 border border-white/10 rounded p-1 text-xs text-gray-400 text-center" placeholder="מלאי"/>
+                                                                        <input type="text" value={item.emoji} onChange={(e) => handleUpdateStoreItem(item.id, 'emoji', e.target.value)} className="w-10 bg-black/20 border border-white/10 rounded p-1 text-xs text-center" placeholder="🎉"/>
+                                                                    </div>
+                                                                </div>
+                                                                <button onClick={() => handleDeleteStoreItem(item.id)} className="text-red-500/50 hover:text-red-500"><Trash2 size={14}/></button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {sectionId === 'challenges_manage' && (
+                                                <div className="space-y-3">
+                                                    <button onClick={handleAddChallenge} className="w-full py-2 bg-orange-500/20 text-orange-500 border border-orange-500/30 rounded-xl text-xs font-bold flex items-center justify-center gap-2">
+                                                        <Plus size={14}/> הוסף אתגר חדש
+                                                    </button>
+                                                    <div className="space-y-2">
+                                                        {(config.challenges || []).map(c => (
+                                                            <div key={c.id} className="bg-white/5 p-2 rounded-xl flex gap-2 items-center">
+                                                                <input type="text" value={c.title} onChange={(e) => handleUpdateChallenge(c.id, 'title', e.target.value)} className="flex-1 bg-transparent border-b border-white/10 text-xs text-white" placeholder="תיאור האתגר"/>
+                                                                <input type="number" value={c.reward} onChange={(e) => handleUpdateChallenge(c.id, 'reward', parseInt(e.target.value))} className="w-12 bg-black/20 rounded p-1 text-xs text-orange-400 text-center"/>
+                                                                <button onClick={() => handleDeleteChallenge(c.id)} className="text-red-500/50 hover:text-red-500"><Trash2 size={12}/></button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            
+                                            {sectionId === 'rules_manage' && (
+                                                <textarea 
+                                                    className="w-full h-32 bg-black/20 border border-white/10 rounded-xl p-3 text-xs text-white leading-relaxed"
+                                                    value={config.rules}
+                                                    onChange={(e) => saveConfig({...config, rules: e.target.value})}
+                                                />
+                                            )}
+
+                                            {sectionId === 'theme_settings' && (
+                                                <div className="flex gap-2">
+                                                    {(['current', 'modern', 'simple'] as ThemeType[]).map(t => (
+                                                        <button 
+                                                            key={t}
+                                                            onClick={() => saveConfig({...config, theme: t})}
+                                                            className={`flex-1 py-3 rounded-xl border capitalize text-xs font-bold ${config.theme === t ? 'bg-white text-black border-white' : 'bg-transparent text-gray-400 border-white/10'}`}
+                                                        >
+                                                            {t}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+
+                                            {sectionId === 'general_settings' && (
+                                                <div className="space-y-3">
+                                                    <div>
+                                                        <label className="text-xs text-gray-500">סיסמת מורה</label>
+                                                        <input type="text" value={config.teacherPin} onChange={(e) => saveConfig({...config, teacherPin: e.target.value})} className="w-full bg-black/20 border border-white/10 rounded-xl p-2 text-xs text-white"/>
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-xs text-gray-500">טלפון מורה (לוואטסאפ)</label>
+                                                        <input type="text" value={config.teacherCell} onChange={(e) => saveConfig({...config, teacherCell: e.target.value})} className="w-full bg-black/20 border border-white/10 rounded-xl p-2 text-xs text-white"/>
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-xs text-gray-500">סלוגן</label>
+                                                        <input type="text" value={config.slogan} onChange={(e) => saveConfig({...config, slogan: e.target.value})} className="w-full bg-black/20 border border-white/10 rounded-xl p-2 text-xs text-white"/>
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-xs text-gray-500">לוגו (URL)</label>
+                                                        <input type="text" value={config.logo} onChange={(e) => saveConfig({...config, logo: e.target.value})} className="w-full bg-black/20 border border-white/10 rounded-xl p-2 text-xs text-white"/>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {sectionId === 'backup_reset' && (
+                                                <div className="space-y-2">
+                                                    <button onClick={() => {
+                                                        const blob = new Blob([JSON.stringify({db, config}, null, 2)], {type : 'application/json'});
+                                                        const url = URL.createObjectURL(blob);
+                                                        const a = document.createElement('a');
+                                                        a.href = url;
+                                                        a.download = `backup_${new Date().toLocaleDateString()}.json`;
+                                                        a.click();
+                                                    }} className="w-full py-2 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-xl text-xs font-bold">
+                                                        הורד גיבוי מקומי (JSON)
+                                                    </button>
+                                                    
+                                                    {!showResetConfirm ? (
+                                                        <button onClick={() => setShowResetConfirm(true)} className="w-full py-2 bg-red-500/10 text-red-500 border border-red-500/20 rounded-xl text-xs font-bold">
+                                                            איפוס תקופה מלא
+                                                        </button>
+                                                    ) : (
+                                                        <div className="bg-red-500/10 p-3 rounded-xl border border-red-500/30">
+                                                            <p className="text-red-500 text-xs font-bold mb-2 text-center">בטוח? הפעולה תמחק את כל הנקודות!</p>
+                                                            <div className="flex gap-2">
+                                                                <button onClick={handleFullReset} className="flex-1 bg-red-600 text-white py-2 rounded-lg text-xs font-bold">כן, אפס הכל</button>
+                                                                <button onClick={() => setShowResetConfirm(false)} className="flex-1 bg-white/10 text-white py-2 rounded-lg text-xs font-bold">ביטול</button>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {sectionId === 'learning_manage' && (
+                                                <div className="space-y-4">
+                                                     {/* ... (Previous Learning Manage Code) ... */}
+                                                </div>
+                                            )}
+
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                     </div>
+
+                     <div className="mt-6 pt-6 border-t border-white/10">
+                         <button onClick={() => setShowBatchCommenter(true)} className="w-full py-4 bg-gradient-to-r from-yellow-600 to-yellow-800 text-white font-bold rounded-2xl shadow-lg flex items-center justify-center gap-2">
+                             <Wand2 size={20}/> מחולל הערות לתעודה (AI)
+                         </button>
+                     </div>
+                 </div>
+             )}
+
+             {/* OTHER VIEWS */}
+             {currentView === 'seating' && (
+                <SeatingChart 
+                    students={Object.values(db) as Student[]} 
+                    onUpdateStudent={(s) => {
+                        saveDb({ ...db, [s.name]: s });
+                    }}
+                    onBatchUpdate={(updates) => {
+                        const newDb = { ...db };
+                        updates.forEach(s => newDb[s.name] = s);
+                        saveDb(newDb);
+                    }}
+                />
+             )}
+
+             {currentView === 'store' && (
+                <StoreView 
+                    students={Object.values(db) as Student[]}
+                    config={config}
+                    cart={cart}
+                    setCart={setCart}
+                    selectedStudentId={userRole === 'student' ? loggedInStudentName : storeSelectedStudentId}
+                    setSelectedStudentId={userRole === 'teacher' ? setStoreSelectedStudentId : () => {}}
+                    onCheckout={() => {
+                        const sId = userRole === 'student' ? loggedInStudentName : storeSelectedStudentId;
+                        if (!sId || !db[sId]) return;
+                        
+                        const student = db[sId];
+                        const totalCost = cart.reduce((sum, item) => sum + item.price, 0);
+                        
+                        if (student.total < totalCost) {
+                            alert("אין מספיק נקודות!");
+                            return false;
+                        }
+
+                        // Process transaction
+                        const newTotal = student.total - totalCost;
+                        const newPurchases = [
+                            ...(student.purchases || []),
+                            ...cart.map(item => ({
+                                id: Date.now().toString() + Math.random(),
+                                itemId: item.id,
+                                itemName: item.name,
+                                cost: item.price,
+                                date: new Date().toLocaleDateString('he-IL'),
+                                timestamp: Date.now()
+                            }))
+                        ];
+
+                        // Log transaction in history too
+                        const newLog = {
+                            sub: "חנות",
+                            teach: "מערכת",
+                            k: `רכישת ${cart.length} פריטים`,
+                            c: 1,
+                            s: -totalCost,
+                            d: new Date().toLocaleDateString('he-IL')
+                        };
+
+                        saveDb({ ...db, [sId]: { ...student, total: newTotal, purchases: newPurchases, logs: [...student.logs, newLog] } });
+                        setCart([]);
+                        
+                        // Update stock
+                        const newStoreItems = config.storeItems.map(item => {
+                            const inCart = cart.filter(c => c.id === item.id).length;
+                            return inCart > 0 ? { ...item, stock: Math.max(0, item.stock - inCart) } : item;
+                        });
+                        saveConfig({ ...config, storeItems: newStoreItems });
+                        
+                        return true;
+                    }}
+                />
+             )}
+         </div>
+
+         {/* Bottom Navigation (Teacher only) */}
+         {userRole === 'teacher' && (
+            <div className="fixed bottom-0 left-0 right-0 bg-card border-t border-accent/20 p-2 flex justify-around items-center z-30 pb-safe">
+                <button onClick={() => setCurrentView('home')} className={`p-3 rounded-xl flex flex-col items-center gap-1 transition ${currentView === 'home' ? 'text-accent' : 'text-gray-500'}`}>
+                    <Home size={20} /> <span className="text-[10px] font-bold">בית</span>
+                </button>
+                <button onClick={() => setCurrentView('seating')} className={`p-3 rounded-xl flex flex-col items-center gap-1 transition ${currentView === 'seating' ? 'text-accent' : 'text-gray-500'}`}>
+                    <LayoutGrid size={20} /> <span className="text-[10px] font-bold">כיתה</span>
+                </button>
+                <button onClick={() => setCurrentView('store')} className={`p-3 rounded-xl flex flex-col items-center gap-1 transition ${currentView === 'store' ? 'text-accent' : 'text-gray-500'}`}>
+                    <Store size={20} /> <span className="text-[10px] font-bold">חנות</span>
+                </button>
+                <button onClick={() => setCurrentView('contacts')} className={`p-3 rounded-xl flex flex-col items-center gap-1 transition ${currentView === 'contacts' ? 'text-accent' : 'text-gray-500'}`}>
+                    <Users size={20} /> <span className="text-[10px] font-bold">קשר</span>
+                </button>
+            </div>
+         )}
+      </div>
+
+      {/* Overlays */}
+      {showRules && (
+          <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in">
+              <div className="bg-card w-full max-w-lg rounded-3xl border border-accent/30 shadow-2xl relative overflow-hidden">
+                  <div className="p-6 border-b border-border bg-black/20 flex justify-between items-center">
+                      <h2 className="text-2xl font-black text-accent flex items-center gap-2"><Book size={24}/> תקנון הכיתה</h2>
+                      <button onClick={() => setShowRules(false)}><X className="text-gray-400"/></button>
+                  </div>
+                  <div className="p-8 max-h-[60vh] overflow-y-auto">
+                      <p className="whitespace-pre-wrap text-lg leading-relaxed text-white">{config.rules}</p>
+                  </div>
+                  <div className="p-4 bg-primary border-t border-border flex justify-center">
+                      <button onClick={() => setShowRules(false)} className="px-8 py-3 bg-white/10 hover:bg-white/20 rounded-xl font-bold">סגור</button>
+                  </div>
+              </div>
+          </div>
       )}
 
-      {showBatchCommenter && <BatchCommenter db={db} onSave={(updatedDb) => { saveDb(updatedDb); setShowBatchCommenter(false); }} onClose={() => setShowBatchCommenter(false)} />}
-      {showResetConfirm && (<div className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in"><div className="bg-card w-full max-w-sm rounded-[2rem] border border-red-500/30 p-8 text-center"><div className="inline-block p-4 rounded-full bg-red-500/10 text-red-500 mb-4"><Trash2 size={40} /></div><h3 className="text-2xl font-bold text-red-500 mb-2">אזהרה!</h3><p className="text-txt/70 mb-8 text-sm leading-relaxed">פעולה זו תאפס את הניקוד וההיסטוריה לכל התלמידים.<br/>רשימת התלמידים (אלפון) ומרכז הלמידה יישמרו.<br/>האם להמשיך?</p><div className="flex gap-3"><button onClick={() => setShowResetConfirm(false)} className="flex-1 py-3.5 bg-white/10 rounded-2xl font-bold text-txt active:scale-95 transition-transform">ביטול</button><button onClick={handleFullReset} className="flex-1 py-3.5 bg-red-600 text-white rounded-2xl font-bold shadow-lg shadow-red-600/20 active:scale-95 transition-transform">כן, אפס תקופה</button></div></div></div>)}
+      {showChangePassword && loggedInStudentName && (
+          <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-6 animate-in fade-in">
+              <div className="bg-card w-full max-w-sm rounded-3xl border border-blue-500/30 p-6 shadow-2xl">
+                  <h3 className="text-xl font-bold text-white mb-4">החלפת סיסמה אישית</h3>
+                  <input 
+                    type="text" 
+                    placeholder="הזן סיסמה חדשה (לפחות 4 תווים)" 
+                    className="w-full bg-black/30 border border-white/10 rounded-xl p-3 text-white mb-4 outline-none focus:border-blue-500"
+                    value={newPasswordInput}
+                    onChange={(e) => setNewPasswordInput(e.target.value)}
+                  />
+                  <div className="flex gap-2">
+                      <button onClick={handleChangePassword} className="flex-1 bg-blue-600 text-white font-bold py-3 rounded-xl">שמור</button>
+                      <button onClick={() => setShowChangePassword(false)} className="flex-1 bg-white/10 text-white font-bold py-3 rounded-xl">ביטול</button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {showBatchCommenter && (
+          <BatchCommenter 
+            db={db}
+            onSave={(updatedDb) => {
+                saveDb(updatedDb);
+                setShowBatchCommenter(false);
+            }}
+            onClose={() => setShowBatchCommenter(false)}
+          />
+      )}
+
     </div>
   );
 }

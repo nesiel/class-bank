@@ -57,7 +57,22 @@ export const parseGradesExcel = async (file: File): Promise<Record<string, Grade
                 const workbook = XLSX.read(data, { type: 'array' });
                 const sheetName = workbook.SheetNames[0];
                 const sheet = workbook.Sheets[sheetName];
-                const json = XLSX.utils.sheet_to_json(sheet) as any[];
+                
+                // Dynamic Header Detection for Grades File
+                const rawJson = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+                let headerRowIndex = 0;
+                rawJson.forEach((row, index) => {
+                    const rowStr = row.join(' ');
+                    // Look for common header indicators
+                    if (rowStr.includes('שם התלמיד') || 
+                        rowStr.includes('Name') || 
+                        (rowStr.includes('שם') && rowStr.includes('משפחה')) ||
+                        rowStr.includes('תעודת זהות')) {
+                        headerRowIndex = index;
+                    }
+                });
+
+                const json = XLSX.utils.sheet_to_json(sheet, { range: headerRowIndex }) as any[];
                 
                 const result: Record<string, GradeEntry[]> = {};
 
@@ -67,25 +82,108 @@ export const parseGradesExcel = async (file: File): Promise<Record<string, Grade
                     if (!nameKey) return;
                     
                     const name = String(row[nameKey]).trim();
+                    if (!name) return;
+
                     const grades: GradeEntry[] = [];
 
                     Object.keys(row).forEach(key => {
-                        if (key === nameKey) return; // Skip name column
+                        // Skip non-grade columns based on typical headers
+                        if (key === nameKey || ['שכבה', 'כיתה', 'מס', "מס'", 'ת.ז', 'מגמה', 'סיכום'].some(skip => key.includes(skip))) return;
                         
-                        // Attempt to parse score
                         const val = row[key];
-                        const score = parseFloat(val);
+                        if (!val) return;
+
+                        const content = String(val);
                         
-                        // Only add if it's a valid number
-                        if (!isNaN(score)) {
-                            grades.push({
-                                subject: key.trim(),
-                                score: score
-                            });
+                        // Clean Subject Name for display
+                        // Remove brackets like [71] and text after it
+                        let subjectName = key.split('[')[0].trim(); 
+                        if (subjectName.includes('-')) {
+                             const parts = subjectName.split('-');
+                             // If the first part is short (likely the subject), keep it.
+                             if (parts[0].length < 15) {
+                                 subjectName = parts[0].trim();
+                             }
+                        }
+                        subjectName = subjectName.replace('ציונים ל', '').replace('ציוני', '').trim();
+
+                        // --- Strategy 1: Mashov/Complex Format ---
+                        // Looks for: "Test Description: (Weight - W) Score"
+                        // Regex Breakdown:
+                        // (.+?) -> Capture description (lazy)
+                        // : -> Literal colon
+                        // \s* -> Spaces
+                        // \( -> Open paren
+                        // [^\)]*? -> Anything inside paren (lazy)
+                        // (\d+) -> Weight digits (optional capture, we mostly need structure)
+                        // [^\)]*? -> Rest of paren
+                        // \) -> Close paren
+                        // \s* -> Spaces
+                        // (\d+) -> The Score
+                        const complexRegex = /(.+?):\s*\([^\)]*?(\d+)[^\)]*?\)\s*(\d+)/g;
+                        
+                        let complexMatch;
+                        let foundComplex = false;
+
+                        // Use a fresh regex instance or loop carefully
+                        while ((complexMatch = complexRegex.exec(content)) !== null) {
+                            foundComplex = true;
+                            const desc = complexMatch[1].trim();
+                            const score = parseInt(complexMatch[3]);
+                            
+                            if (!isNaN(score)) {
+                                grades.push({
+                                    subject: `${subjectName} - ${desc}`,
+                                    score: score
+                                });
+                            }
+                        }
+
+                        // --- Strategy 2: Fallback / Weighted Average ---
+                        if (!foundComplex) {
+                            const weightRegex = /\(משקל\s*[-–]\s*(\d+)\)\s*(\d+)/g;
+                            let match;
+                            let totalWeightedScore = 0;
+                            let totalWeight = 0;
+                            let foundWeights = false;
+
+                            while ((match = weightRegex.exec(content)) !== null) {
+                                foundWeights = true;
+                                const weight = parseInt(match[1]);
+                                const score = parseInt(match[2]);
+                                
+                                if (!isNaN(weight) && !isNaN(score)) {
+                                    totalWeightedScore += (score * weight);
+                                    totalWeight += weight;
+                                }
+                            }
+
+                            if (foundWeights && totalWeight > 0) {
+                                const finalScore = Math.round(totalWeightedScore / totalWeight);
+                                grades.push({ subject: subjectName, score: finalScore });
+                            } else {
+                                // --- Strategy 3: Simple Number ---
+                                // Just find the last number in the string or parse the whole string
+                                const simpleScore = parseFloat(content);
+                                if (!isNaN(simpleScore) && simpleScore <= 100) {
+                                    grades.push({ subject: subjectName, score: simpleScore });
+                                } else {
+                                     // Last resort: Extract last number
+                                     const allNums = content.match(/(\d+)/g);
+                                     if (allNums && allNums.length > 0) {
+                                         const lastNum = parseInt(allNums[allNums.length - 1]);
+                                         if(lastNum <= 100) {
+                                             grades.push({ subject: subjectName, score: lastNum });
+                                         }
+                                     }
+                                }
+                            }
                         }
                     });
 
-                    result[name] = grades;
+                    if (grades.length > 0) {
+                        result[name] = grades;
+                    }
                 });
                 
                 resolve(result);
@@ -221,25 +319,21 @@ export const parseExcel = async (file: File, config: AppConfig): Promise<Databas
             const content = String(val || "");
 
             // Method 1: Robust Digit-Based Split
-            // Splits string into pairs of [Text][Number]
-            // Handles "Action:5", "Action: 5", "Action5", "Action:5Action:6"
-            // Captures any sequence of non-digits as the name, and the following digits as the count.
             const regex = /([^\d]+)(\d+(\.\d+)?)/g;
             let match;
             let matchedInCell = false;
 
             while ((match = regex.exec(content)) !== null) {
                 let rawAction = match[1].trim();
-                // Remove trailing separators that might have been captured (e.g. "Late:" -> "Late")
+                // Remove trailing separators
                 rawAction = rawAction.replace(/[:\-\(\)]+$/, '').trim();
                 
-                // NORMALIZE WHITESPACE: Replace multiple spaces/tabs with single space
-                // This fixes "מילה  טובה" (double space) not matching "מילה טובה" (single space)
+                // NORMALIZE WHITESPACE
                 rawAction = rawAction.replace(/\s+/g, ' ');
 
                 const count = parseFloat(match[2]);
                 
-                // Find matching action in config (longest match first)
+                // Find matching action
                 const actionKey = sortedActionKeys.find(k => rawAction.includes(k));
                 
                 if (actionKey) {

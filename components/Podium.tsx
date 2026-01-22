@@ -7,9 +7,10 @@ interface PodiumProps {
   students: Student[];
   onRemoveStudent: (name: string) => void;
   onStudentClick: (student: Student) => void;
+  scoreSuffix?: string; // Optional suffix (e.g., '₪' or '%')
 }
 
-export const Podium: React.FC<PodiumProps> = ({ students, onRemoveStudent, onStudentClick }) => {
+export const Podium: React.FC<PodiumProps> = ({ students, onRemoveStudent, onStudentClick, scoreSuffix = '₪' }) => {
   const first = students[0];
   const second = students[1];
   const third = students[2];
@@ -52,7 +53,7 @@ export const Podium: React.FC<PodiumProps> = ({ students, onRemoveStudent, onStu
                     </button>
 
                     <span className="text-xs font-bold block text-txt/70 truncate w-20 text-center group-hover:text-accent transition-colors">{second.name}</span>
-                    <span className="text-sm font-bold text-accent">{second.total}₪</span>
+                    <span className="text-sm font-bold text-accent">{second.total}{scoreSuffix}</span>
 
                     {/* WhatsApp */}
                     <button 
@@ -89,7 +90,7 @@ export const Podium: React.FC<PodiumProps> = ({ students, onRemoveStudent, onStu
 
                     <Trophy className="w-8 h-8 text-yellow-500 mb-1 drop-shadow-md group-hover:text-accent transition-colors" />
                     <span className="text-sm font-bold block text-txt truncate w-24 text-center group-hover:text-accent transition-colors">{first.name}</span>
-                    <span className="text-lg font-bold text-accent drop-shadow-sm">{first.total}₪</span>
+                    <span className="text-lg font-bold text-accent drop-shadow-sm">{first.total}{scoreSuffix}</span>
 
                     {/* WhatsApp */}
                     <button 
@@ -126,7 +127,7 @@ export const Podium: React.FC<PodiumProps> = ({ students, onRemoveStudent, onStu
                         </button>
 
                         <span className="text-xs font-bold block text-txt/70 truncate w-20 text-center group-hover:text-accent transition-colors">{third.name}</span>
-                        <span className="text-sm font-bold text-accent">{third.total}₪</span>
+                        <span className="text-sm font-bold text-accent">{third.total}{scoreSuffix}</span>
 
                         {/* WhatsApp */}
                         <button 
@@ -162,7 +163,7 @@ export const Podium: React.FC<PodiumProps> = ({ students, onRemoveStudent, onStu
                             <span className="text-xs font-bold text-white">{student.name}</span>
                         </div>
                         <div className="flex items-center gap-3">
-                            <span className="text-xs font-bold text-accent/70">{student.total}₪</span>
+                            <span className="text-xs font-bold text-accent/70">{student.total}{scoreSuffix}</span>
                             <button 
                                 onClick={(e) => handleWhatsApp(e, student)}
                                 className="p-1.5 bg-green-500/10 text-green-500 rounded-full hover:bg-green-500 hover:text-white transition-colors"
