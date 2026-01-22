@@ -1,18 +1,18 @@
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Database, Student, AppConfig, DEFAULT_CONFIG, ThemeType, StoreItem, Purchase, UserRole, Challenge, LearningResource, ResourceType } from './types';
+import React, { useState, useEffect, useRef } from 'react';
+import { Database, Student, AppConfig, DEFAULT_CONFIG, ThemeType, StoreItem, UserRole, Challenge, LearningResource, ResourceType } from './types';
 import { parseExcel, fileToBase64, parseGradesExcel } from './utils';
 import { Podium } from './components/Podium';
 import { StudentDetails } from './components/StudentDetails';
 import { SeatingChart } from './components/SeatingChart';
 import { StoreView } from './components/StoreView';
-import { ChallengesView } from './components/ChallengesView'; // Import new component
+import { ChallengesView } from './components/ChallengesView';
 import { BatchCommenter } from './components/BatchCommenter';
 import { LoginScreen } from './components/LoginScreen';
 import { LearningCenter } from './components/LearningCenter';
 import { GoogleGenAI } from "@google/genai";
 import { 
-  Home, ShieldCheck, ChevronUp, ChevronDown, Settings, Trash2, Trophy, FileSpreadsheet, Coins, Users, Phone, Download, UserPlus, LayoutGrid, Book, X, PlusCircle, ArrowUp, ArrowDown, GripVertical, MessageCircle, Undo, Scroll, Star, AlertCircle, Palette, Store, Image as ImageIcon, ShoppingBag, Plus, Package, Wand2, Loader2, Save, GraduationCap, LogOut, MinusCircle, KeyRound, Lock, Target, Cloud, Upload, RefreshCw, CheckSquare, Square, Check, BookOpen, Link as LinkIcon, FileText, HardDrive, FileQuestion, Copy, ExternalLink, Crown, Search, Activity, Eye, EyeOff, Power, BrainCircuit, FileType, Zap, ChevronRight
+  Home, ChevronUp, ChevronDown, Settings, Trash2, Trophy, FileSpreadsheet, Coins, Users, Phone, Download, LayoutGrid, Book, X, Scroll, AlertCircle, Palette, Store, Image as ImageIcon, Plus, Wand2, Loader2, GraduationCap, LogOut, KeyRound, Lock, Target, Cloud, Upload, Check, BookOpen, FileQuestion, Copy, FileType, Search, Activity, ChevronRight, Power, BrainCircuit
 } from 'lucide-react';
 
 // Define the available admin sections
@@ -37,19 +37,15 @@ export default function App() {
   const [loggedInStudentName, setLoggedInStudentName] = useState<string | null>(null);
 
   const [currentView, setCurrentView] = useState<'home' | 'admin' | 'contacts' | 'seating' | 'store' | 'learning' | 'challenges'>('home');
-  const [showAll, setShowAll] = useState(false);
-  const [showAllTefillah, setShowAllTefillah] = useState(false);
-  const [isTefillahOpen, setIsTefillahOpen] = useState(false); 
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [detailsFilter, setDetailsFilter] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showRules, setShowRules] = useState(false);
   const [showBatchCommenter, setShowBatchCommenter] = useState(false);
-  const [isStudentListExpanded, setIsStudentListExpanded] = useState(false); // Default collapsed
   
   // Podium State
-  const [podiumMode, setPodiumMode] = useState<'regular' | 'grades'>('regular');
+  const [podiumMode, setPodiumMode] = useState<'regular' | 'grades' | 'tefillah'>('regular');
 
   // Cloud Sync State
   const [isSyncing, setIsSyncing] = useState(false);
@@ -79,15 +75,10 @@ export default function App() {
     rules_manage: true,
     learning_manage: true,
   });
-  const [generatingItemId, setGeneratingItemId] = useState<string | null>(null);
 
   // Store Persistent State
-  const [storeSelectedStudentId, setStoreSelectedStudentId] = useState<string | null>(null);
   const [cart, setCart] = useState<StoreItem[]>([]);
   
-  // Undo State
-  const [undoState, setUndoState] = useState<{name: string, timestamp: number} | null>(null);
-
   // Admin View State - Order
   const [adminOrder, setAdminOrder] = useState<string[]>([
     'cloud_sync',
@@ -100,7 +91,6 @@ export default function App() {
     'backup_reset', 
     'theme_settings'
   ]);
-  const [isReordering, setIsReordering] = useState(false);
 
   // --- Initialization ---
   useEffect(() => {
@@ -233,9 +223,6 @@ export default function App() {
       // Save the cleaned DB
       saveDb(newDb);
       
-      // We DO NOT reset the config (so Learning Center, Store, Rules remain)
-      // saveConfig(DEFAULT_CONFIG); 
-
       // Set a flag to prevent immediate cloud reload on refresh overriding our reset
       localStorage.setItem('bank_skip_cloud_load', 'true');
       
@@ -254,11 +241,6 @@ export default function App() {
   const saveConfig = (newCfg: AppConfig) => {
     setConfig(newCfg);
     localStorage.setItem('bank_cfg', JSON.stringify(newCfg));
-  };
-
-  const saveAdminOrder = (newOrder: string[]) => {
-    setAdminOrder(newOrder);
-    localStorage.setItem('admin_order_v2', JSON.stringify(newOrder));
   };
 
   const toggleAdminSection = (id: string) => {
@@ -318,7 +300,7 @@ export default function App() {
         const final = { ...db };
         Object.entries(newDb).forEach(([name, data]) => {
           const studentData = data as Student;
-          const currentStudent = final[name]; // Alias to prevent TS spread error
+          const currentStudent = final[name];
           if (currentStudent) {
             if (type === 'behavior') {
               final[name] = { 
@@ -359,7 +341,7 @@ export default function App() {
               
               let updatedCount = 0;
               Object.entries(gradesData).forEach(([name, grades]) => {
-                  const currentStudent = final[name]; // Alias to prevent TS spread error
+                  const currentStudent = final[name];
                   if (currentStudent) {
                       final[name] = { ...currentStudent, grades: grades };
                       updatedCount++;
@@ -384,7 +366,7 @@ export default function App() {
               
               Object.entries(parsedDb).forEach(([name, data]) => {
                   const studentData = data as Student;
-                  const currentStudent = final[name]; // Alias to prevent TS spread error
+                  const currentStudent = final[name];
                   if (currentStudent) {
                       final[name] = {
                           ...currentStudent,
@@ -460,23 +442,6 @@ export default function App() {
     }
   };
   
-  const handleAddChallenge = () => {
-      const newChallenge: Challenge = { id: Date.now().toString(), title: "", reward: 50, approved: true };
-      saveConfig({ ...config, challenges: [...(config.challenges || []), newChallenge] });
-  };
-
-  const handleUpdateChallenge = (id: string, field: keyof Challenge, value: any) => {
-      const updated = (config.challenges || []).map(c => c.id === id ? { ...c, [field]: value } : c);
-      saveConfig({ ...config, challenges: updated });
-  };
-
-  const handleDeleteChallenge = (id: string) => {
-      if(window.confirm("למחוק אתגר זה?")) {
-          const updated = (config.challenges || []).filter(c => c.id !== id);
-          saveConfig({ ...config, challenges: updated });
-      }
-  };
-
   const handleAddSubject = () => {
       if (!newSubjectName.trim()) return;
       const current = config.learningSubjects || [];
@@ -516,10 +481,6 @@ export default function App() {
       if (type === 'drive') setNewResource(prev => ({...prev, type: 'link', title: 'תיקיית חומרים (דרייב)', url: ''}));
       else if (type === 'quiz') setNewResource(prev => ({...prev, type: 'form', title: 'בוחן', url: ''}));
       else if (type === 'review') setNewResource(prev => ({...prev, type: 'form', title: 'חזרה למבחן', url: ''}));
-  };
-
-  const handleGenerateQuizScript = async () => {
-      // ... (Implementation already in previous step)
   };
 
   const handleGenerateQuiz = async () => {
@@ -563,6 +524,10 @@ function createGeneratedQuiz() {
     item.setTitle(q.q).setPoints(q.p).setChoices(choices);
   });
   
+  // Custom confirmation message
+  form.setConfirmationMessage('כל הכבוד! סיימת את הבוחן. לחץ על "הצג ציון" כדי לראות את התוצאה שלך.');
+  form.setPublishingSummary(true);
+
   Logger.log('Form URL: ' + form.getPublishedUrl());
   Logger.log('Edit URL: ' + form.getEditUrl());
 }`;
@@ -733,12 +698,22 @@ function createStudyGuideDoc() {
         }).sort((a, b) => b.total - a.total);
     }
     
+    // Mode: Tefillah (Prayer Excellence)
+    if (podiumMode === 'tefillah') {
+         return list.map(s => {
+            const score = s.logs
+                .filter(l => l.k.includes('תפילה') || l.sub === 'תפילה') // Check action name or subject
+                .reduce((acc, log) => acc + log.s, 0);
+            return { ...s, total: score };
+        }).sort((a, b) => b.total - a.total);
+    }
+    
     // Mode: Points (Regular)
     return list.sort((a, b) => b.total - a.total);
   };
   
   const handleStudentClick = (student: Student) => {
-      // Always look up the real student from DB to get fresh data (including real total points, not average)
+      // Always look up the real student from DB to get fresh data
       const realStudent = db[student.name] || student;
       setSelectedStudent(realStudent);
   };
@@ -755,8 +730,6 @@ function createStudyGuideDoc() {
           onDeleteLog={(name, idx) => {
              const s = db[name];
              if (!s) return;
-             // We need to find the real index if we are filtered
-             // But onDeleteLog in StudentDetails passes the originalIndex now
              const log = s.logs[idx];
              const newLogs = [...s.logs];
              newLogs.splice(idx, 1);
@@ -783,8 +756,6 @@ function createStudyGuideDoc() {
           filterKeyword={detailsFilter}
         />
       )}
-      
-      {/* ... (Rest of the application: Sidebar, Admin Views, etc.) ... */}
       
       {/* Main View Container */}
       <div className={`flex flex-col h-screen ${userRole === 'teacher' ? 'pb-20' : ''}`}> {/* Add padding for bottom nav */}
@@ -820,9 +791,12 @@ function createStudyGuideDoc() {
                    <button onClick={() => setCurrentView('learning')} className="p-2 bg-emerald-500/10 text-emerald-500 rounded-full hover:bg-emerald-500/20"><BookOpen size={20}/></button>
                    <button onClick={() => setShowRules(true)} className="p-2 bg-purple-500/10 text-purple-400 rounded-full hover:bg-purple-500/20"><Book size={20}/></button>
                    <button onClick={() => setCurrentView(currentView === 'challenges' ? 'home' : 'challenges')} className={`p-2 rounded-full transition ${currentView === 'challenges' ? 'bg-orange-500 text-white' : 'bg-orange-500/10 text-orange-500 hover:bg-orange-500/20'}`}><Target size={20}/></button>
-                   <button onClick={() => setCurrentView(currentView === 'admin' ? 'home' : 'admin')} className={`p-2 rounded-full transition ${currentView === 'admin' ? 'bg-accent text-accent-fg' : 'bg-white/10 text-gray-300'}`}>
-                      {currentView === 'admin' ? <Home size={20}/> : <Settings size={20}/>}
+                   
+                   {/* Store Button - Moved to Top */}
+                   <button onClick={() => setCurrentView('store')} className={`p-2 rounded-full transition ${currentView === 'store' ? 'bg-indigo-500 text-white' : 'bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20'}`} title="חנות">
+                      <Store size={20}/>
                    </button>
+
                    <button onClick={handleLogout} className="p-2 bg-red-500/10 text-red-500 rounded-full hover:bg-red-500/20"><LogOut size={20}/></button>
                 </div>
              ) : (
@@ -857,6 +831,12 @@ function createStudyGuideDoc() {
                                 >
                                     <GraduationCap size={12} /> מצטייני לימודים
                                 </button>
+                                <button 
+                                    onClick={() => setPodiumMode('tefillah')}
+                                    className={`px-4 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-2 ${podiumMode === 'tefillah' ? 'bg-purple-500 text-white shadow-lg scale-105' : 'bg-white/10 text-gray-400 hover:bg-white/20'}`}
+                                >
+                                    <Scroll size={12} /> מצטייני תפילה
+                                </button>
                             </div>
 
                             <Podium 
@@ -870,52 +850,6 @@ function createStudyGuideDoc() {
                                 onStudentClick={handleStudentClick}
                                 scoreSuffix={podiumMode === 'grades' ? '' : '₪'} 
                             />
-                            
-                            <div className="mt-8">
-                                <div className="flex justify-between items-center mb-4 px-2">
-                                    <h3 className="font-bold text-gray-400 flex items-center gap-2"><Users size={16}/> כל התלמידים</h3>
-                                    <div className="flex items-center gap-2">
-                                        <button 
-                                            onClick={() => setIsStudentListExpanded(!isStudentListExpanded)}
-                                            className={`p-2 rounded-full hover:bg-white/10 text-gray-400 transition ${isStudentListExpanded ? 'bg-white/10 text-white' : 'bg-white/5'}`}
-                                        >
-                                            {isStudentListExpanded ? <EyeOff size={16}/> : <Eye size={16}/>}
-                                        </button>
-                                        <div className="flex items-center gap-2 bg-black/20 rounded-lg p-1">
-                                            <Search size={14} className="text-gray-500 ml-1"/>
-                                            <input 
-                                                className="bg-transparent border-none outline-none text-xs text-white w-24" 
-                                                placeholder="חיפוש..." 
-                                                value={searchQuery}
-                                                onChange={(e) => setSearchQuery(e.target.value)}
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                {isStudentListExpanded && (
-                                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 animate-in fade-in slide-in-from-top-4">
-                                        {(Object.values(db) as Student[])
-                                            .filter(s => s.name.includes(searchQuery))
-                                            .sort((a,b) => a.name.localeCompare(b.name))
-                                            .map(s => (
-                                            <button 
-                                                key={s.name}
-                                                onClick={() => handleStudentClick(s)}
-                                                className="bg-card hover:bg-white/5 p-3 rounded-xl border border-border flex flex-col items-center gap-2 transition active:scale-95 text-center group"
-                                            >
-                                                <span className="font-bold text-sm text-txt group-hover:text-accent truncate w-full">{s.name}</span>
-                                                <span className={`text-xs font-black ${s.total < 0 ? 'text-red-500' : 'text-accent'}`}>{s.total}₪</span>
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
-                                {!isStudentListExpanded && (
-                                    <div className="text-center py-4 bg-white/5 rounded-xl border border-dashed border-white/10">
-                                        <p className="text-xs text-gray-500 italic">רשימת התלמידים מוסתרת. לחץ על העין כדי להציג.</p>
-                                    </div>
-                                )}
-                            </div>
                          </>
                      )}
 
@@ -1031,9 +965,7 @@ function createStudyGuideDoc() {
                  <div className="h-full overflow-y-auto p-4 pb-24 space-y-4">
                      <h2 className="text-2xl font-black text-white mb-6">לוח בקרה</h2>
                      
-                     {/* Reorderable Grid Logic would go here, simplified for now to list */}
                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {/* Admin Cards - mapped from ADMIN_SECTIONS based on adminOrder */}
                         {adminOrder.map(sectionId => {
                             const section = ADMIN_SECTIONS.find(s => s.id === sectionId);
                             if (!section) return null;
@@ -1433,9 +1365,9 @@ function createStudyGuideDoc() {
                     setCart={setCart}
                     onUpdateConfig={saveConfig}
                     onUpdateStudent={(updatedStudent) => saveDb({ ...db, [updatedStudent.name]: updatedStudent })}
-                    onCheckout={() => true} // Legacy prop, no longer critical in new logic but kept for safety
-                    selectedStudentId={null} // Legacy
-                    setSelectedStudentId={() => {}} // Legacy
+                    onCheckout={() => true} // Legacy prop
+                    selectedStudentId={null} // Legacy prop
+                    setSelectedStudentId={() => {}} // Legacy prop
                 />
              )}
          </div>
@@ -1449,11 +1381,11 @@ function createStudyGuideDoc() {
                 <button onClick={() => setCurrentView('seating')} className={`p-3 rounded-xl flex flex-col items-center gap-1 transition ${currentView === 'seating' ? 'text-accent' : 'text-gray-500'}`}>
                     <LayoutGrid size={20} /> <span className="text-[10px] font-bold">כיתה</span>
                 </button>
-                <button onClick={() => setCurrentView('store')} className={`p-3 rounded-xl flex flex-col items-center gap-1 transition ${currentView === 'store' ? 'text-accent' : 'text-gray-500'}`}>
-                    <Store size={20} /> <span className="text-[10px] font-bold">חנות</span>
-                </button>
                 <button onClick={() => setCurrentView('contacts')} className={`p-3 rounded-xl flex flex-col items-center gap-1 transition ${currentView === 'contacts' ? 'text-accent' : 'text-gray-500'}`}>
                     <Users size={20} /> <span className="text-[10px] font-bold">קשר</span>
+                </button>
+                <button onClick={() => setCurrentView('admin')} className={`p-3 rounded-xl flex flex-col items-center gap-1 transition ${currentView === 'admin' ? 'text-accent' : 'text-gray-500'}`}>
+                    <Settings size={20} /> <span className="text-[10px] font-bold">ניהול</span>
                 </button>
             </div>
          )}
