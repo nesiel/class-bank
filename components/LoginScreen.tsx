@@ -9,9 +9,10 @@ interface LoginScreenProps {
   onLogin: (role: UserRole, studentName?: string, remember?: boolean) => void;
   onEnterLearning: () => void;
   logo?: string;
+  isSystemLocked?: boolean;
 }
 
-export const LoginScreen: React.FC<LoginScreenProps> = ({ students, teacherPin, onLogin, onEnterLearning, logo }) => {
+export const LoginScreen: React.FC<LoginScreenProps> = ({ students, teacherPin, onLogin, onEnterLearning, logo, isSystemLocked }) => {
   const [view, setView] = useState<'main' | 'teacher' | 'student' | 'student-pin'>('main');
   const [pinInput, setPinInput] = useState("");
   const [error, setError] = useState("");
@@ -71,10 +72,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ students, teacherPin, 
       // Enter
       if (e.key === 'Enter') {
         if (view === 'teacher') {
-            // Need to pass current pinInput to logic if it wasn't a closure, 
-            // but since we rely on state in the closure, ensure dependencies are correct.
-            // Using logic duplication here to be safe with closure values inside useEffect 
-            // or we rely on re-bind.
             if (pinInput === teacherPin) {
                 onLogin('teacher', undefined, rememberMe);
             } else {
@@ -183,19 +180,24 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ students, teacherPin, 
                 </button>
 
                 <button 
-                    onClick={() => setView('student')}
-                    className="w-full bg-[#1e293b] border border-blue-500/30 p-5 rounded-2xl flex items-center justify-between group hover:border-blue-400 transition-all active:scale-95 shadow-lg"
+                    onClick={() => !isSystemLocked && setView('student')}
+                    disabled={isSystemLocked}
+                    className={`w-full p-5 rounded-2xl flex items-center justify-between group transition-all active:scale-95 shadow-lg ${isSystemLocked ? 'bg-red-900/20 border border-red-500/30 opacity-70 cursor-not-allowed' : 'bg-[#1e293b] border border-blue-500/30 hover:border-blue-400'}`}
                 >
                     <div className="flex items-center gap-4">
-                        <div className="bg-blue-500/10 p-3 rounded-full text-blue-400">
-                            <GraduationCap size={24} />
+                        <div className={`p-3 rounded-full ${isSystemLocked ? 'bg-red-500/10 text-red-500' : 'bg-blue-500/10 text-blue-400'}`}>
+                            {isSystemLocked ? <Lock size={24}/> : <GraduationCap size={24} />}
                         </div>
                         <div className="text-right">
-                            <span className="block text-lg font-bold text-white group-hover:text-blue-400 transition-colors">כניסת תלמיד/ה</span>
-                            <span className="text-xs text-gray-400">צפייה במאזן, רכישות והיסטוריה</span>
+                            <span className={`block text-lg font-bold transition-colors ${isSystemLocked ? 'text-red-400' : 'text-white group-hover:text-blue-400'}`}>
+                                {isSystemLocked ? 'האתר נעול כעת' : 'כניסת תלמיד/ה'}
+                            </span>
+                            <span className="text-xs text-gray-400">
+                                {isSystemLocked ? 'המורה נעל את האתר זמנית' : 'צפייה במאזן, רכישות והיסטוריה'}
+                            </span>
                         </div>
                     </div>
-                    <ArrowRight className="text-gray-500 group-hover:text-blue-400 transition-colors" />
+                    {!isSystemLocked && <ArrowRight className="text-gray-500 group-hover:text-blue-400 transition-colors" />}
                 </button>
 
                 <button 
@@ -251,7 +253,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ students, teacherPin, 
             </div>
         )}
 
-        {view === 'student' && (
+        {view === 'student' && !isSystemLocked && (
             <div className="bg-[#1e293b] border border-blue-500/30 p-6 rounded-3xl shadow-2xl animate-in zoom-in-95 duration-300 flex flex-col max-h-[70vh]">
                 <div className="flex justify-between items-center mb-4">
                     <h3 className="text-xl font-bold text-white flex items-center gap-2">
@@ -318,7 +320,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ students, teacherPin, 
 
       </div>
       
-      <p className="fixed bottom-4 text-xs text-gray-600 font-mono">v1.2 - Secure ClassBank</p>
+      <p className="fixed bottom-4 text-xs text-gray-600 font-mono">v1.3 - Secured</p>
     </div>
   );
 };

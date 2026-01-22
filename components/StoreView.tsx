@@ -1,191 +1,349 @@
+
 import React, { useState } from 'react';
-import { Student, StoreItem, AppConfig } from '../types';
-import { ShoppingBag, Coins, ChevronLeft, Check, Lock, Store, Plus, ShoppingCart, Trash2, X, Receipt, Send, Mail, Phone } from 'lucide-react';
+import { Student, StoreItem, AppConfig, PurchaseRequest, UserRole } from '../types';
+import { ShoppingBag, Coins, ChevronLeft, Check, Lock, Store, Plus, ShoppingCart, Trash2, X, Receipt, Send, Mail, Phone, Clock, Box, Edit2, AlertCircle, RefreshCw } from 'lucide-react';
 
 interface StoreViewProps {
   students: Student[];
   config: AppConfig;
-  onCheckout: () => boolean | undefined;
+  userRole: UserRole;
+  loggedInStudentName: string | null;
+  onUpdateConfig: (newConfig: AppConfig) => void;
+  onUpdateStudent: (student: Student) => void;
+  // Legacy/Helper props
   cart: StoreItem[];
   setCart: (items: StoreItem[]) => void;
-  selectedStudentId: string | null;
-  setSelectedStudentId: (id: string | null) => void;
 }
 
 export const StoreView: React.FC<StoreViewProps> = ({ 
     students, 
     config, 
-    onCheckout,
+    userRole,
+    loggedInStudentName,
+    onUpdateConfig,
+    onUpdateStudent,
     cart,
-    setCart,
-    selectedStudentId,
-    setSelectedStudentId
+    setCart
 }) => {
-  const [searchTerm, setSearchTerm] = useState("");
+  // Teacher State
+  const [activeTab, setActiveTab] = useState<'requests' | 'inventory'>('requests');
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  
+  // Student State
   const [isCartOpen, setIsCartOpen] = useState(false);
-  const [showReceipt, setShowReceipt] = useState<{items: StoreItem[], total: number, prevBalance: number} | null>(null);
+  const [showRequestSuccess, setShowRequestSuccess] = useState(false);
 
-  const selectedStudent = selectedStudentId ? students.find(s => s.name === selectedStudentId) : null;
+  // --- TEACHER LOGIC ---
 
-  const handleAddToCart = (item: StoreItem) => {
-    if (!selectedStudent) return;
-    
-    // Check local stock in cart vs real stock
-    const inCartCount = cart.filter(i => i.id === item.id).length;
-    if (inCartCount >= item.stock) {
-        alert("המלאי אזל לפריט זה");
-        return;
-    }
-
-    setCart([...cart, item]);
+  const getAllPendingRequests = () => {
+      const allRequests: { student: Student; req: PurchaseRequest; index: number }[] = [];
+      students.forEach(student => {
+          (student.requests || []).forEach((req, index) => {
+              if (req.status === 'pending') {
+                  allRequests.push({ student, req, index });
+              }
+          });
+      });
+      return allRequests.sort((a, b) => b.req.timestamp - a.req.timestamp);
   };
 
-  const handleRemoveFromCart = (index: number) => {
-    const newCart = [...cart];
-    newCart.splice(index, 1);
-    setCart(newCart);
-  };
-
-  const cartTotal = cart.reduce((sum, item) => sum + item.price, 0);
-
-  const performCheckout = () => {
-    if (!selectedStudent) return;
-    
-    const prevBalance = selectedStudent.total;
-    const items = [...cart];
-    const total = cartTotal;
-
-    const success = onCheckout();
-    if (success) {
-        setIsCartOpen(false);
-        setShowReceipt({
-            items,
-            total,
-            prevBalance
-        });
-    }
-  };
-
-  const sendTeacherNotification = () => {
-      if (!selectedStudent || !showReceipt) return;
-      if (!config.teacherCell) {
-          alert("לא מוגדר טלפון מורה בהגדרות");
-          return;
-      }
-
-      const itemsList = showReceipt.items.map(i => `• ${i.name} (${i.price})`).join('\n');
-      const msg = `*אישור רכישה חדש - הבנק הכיתתי* 🛍️\n\nתלמיד/ה: *${selectedStudent.name}*\nסה"כ לתשלום: *${showReceipt.total}₪*\n\nפירוט:\n${itemsList}\n\nתאריך: ${new Date().toLocaleDateString('he-IL')}`;
+  const handleApproveRequest = (entry: { student: Student; req: PurchaseRequest; index: number }) => {
+      const { student, req, index } = entry;
+      const item = config.storeItems.find(i => i.id === req.itemId);
       
-      const cleanPhone = config.teacherCell.startsWith('05') ? '972' + config.teacherCell.substring(1) : config.teacherCell;
-      window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`, '_blank');
-  };
+      // Validation
+      if (!item) return alert("המוצר לא קיים יותר במלאי");
+      if (item.stock <= 0) return alert("המלאי אזל למוצר זה");
+      if (student.total < req.itemPrice) return alert(`ל${student.name} אין מספיק נקודות (${student.total})`);
 
-  const sendStudentWANotification = () => {
-      if (!selectedStudent || !showReceipt) return;
-      if (!selectedStudent.studentCell) {
-          alert("לא מעודכן טלפון תלמיד");
-          return;
-      }
+      // 1. Deduct Stock
+      const updatedStoreItems = config.storeItems.map(i => 
+          i.id === item.id ? { ...i, stock: i.stock - 1 } : i
+      );
+      onUpdateConfig({ ...config, storeItems: updatedStoreItems });
 
-      const itemsList = showReceipt.items.map(i => `• ${i.name}`).join('\n');
-      const msg = `היי ${selectedStudent.name}, תתחדש/י! 🎉\nרכשת בחנות הכיתתית:\n${itemsList}\n\nהיתרה המעודכנת שלך: ${showReceipt.prevBalance - showReceipt.total}₪`;
+      // 2. Update Student (Deduct points, add purchase, update request status)
+      const newTotal = student.total - req.itemPrice;
       
-      const cleanPhone = selectedStudent.studentCell.startsWith('05') ? '972' + selectedStudent.studentCell.substring(1) : selectedStudent.studentCell;
-      window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+      const newPurchase = {
+          id: Date.now().toString(),
+          itemId: item.id,
+          itemName: item.name,
+          cost: req.itemPrice,
+          date: new Date().toLocaleDateString('he-IL'),
+          timestamp: Date.now()
+      };
+
+      const newLog = {
+          sub: "חנות",
+          teach: "מערכת",
+          k: `רכישת ${item.name}`,
+          c: 1,
+          s: -req.itemPrice,
+          d: new Date().toLocaleDateString('he-IL')
+      };
+
+      const updatedRequests = [...(student.requests || [])];
+      updatedRequests[index] = { ...req, status: 'approved' };
+
+      const updatedStudent: Student = {
+          ...student,
+          total: newTotal,
+          logs: [...student.logs, newLog],
+          purchases: [...(student.purchases || []), newPurchase],
+          requests: updatedRequests
+      };
+
+      onUpdateStudent(updatedStudent);
   };
 
-  const sendStudentEmailNotification = () => {
-      if (!selectedStudent || !showReceipt) return;
-      if (!selectedStudent.studentEmail) {
-          alert("לא מעודכן מייל תלמיד");
-          return;
+  const handleRejectRequest = (entry: { student: Student; req: PurchaseRequest; index: number }) => {
+      const { student, req, index } = entry;
+      const updatedRequests = [...(student.requests || [])];
+      updatedRequests[index] = { ...req, status: 'rejected' }; // Or splice to remove
+      
+      onUpdateStudent({
+          ...student,
+          requests: updatedRequests
+      });
+  };
+
+  const handleInventoryUpdate = (id: string, field: keyof StoreItem, value: any) => {
+      const updatedItems = config.storeItems.map(item => 
+          item.id === id ? { ...item, [field]: value } : item
+      );
+      onUpdateConfig({ ...config, storeItems: updatedItems });
+  };
+
+  const handleDeleteItem = (id: string) => {
+      if(window.confirm("למחוק פריט זה?")) {
+          onUpdateConfig({ 
+              ...config, 
+              storeItems: config.storeItems.filter(i => i.id !== id) 
+          });
       }
-
-      const itemsList = showReceipt.items.map(i => `${i.name}`).join(', ');
-      const subject = `קבלה מהחנות הכיתתית - ${selectedStudent.name}`;
-      const body = `שלום ${selectedStudent.name},\n\nתודה שרכשת בחנות הכיתתית!\nלהלן פירוט הרכישה שלך:\n${itemsList}\n\nסה"כ נקודות שירדו: ${showReceipt.total}\nיתרה נוכחית: ${showReceipt.prevBalance - showReceipt.total}\n\nתהנה/י!`;
-
-      window.open(`mailto:${selectedStudent.studentEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
   };
 
-  const filteredStudents = students.filter(s => s.name.includes(searchTerm));
+  // --- STUDENT LOGIC ---
 
-  // --- Student Selection View ---
-  if (!selectedStudent) {
-    return (
-      <div className="p-4 h-full flex flex-col">
-        <div className="mb-4 bg-card border border-accent/30 p-6 rounded-[1.5rem] text-center shadow-lg">
-           <div className="bg-accent/10 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-2 text-accent">
-              <Store size={24} />
-           </div>
-           <h2 className="text-xl font-black text-accent">החנות הכיתתית</h2>
-           <p className="text-txt/70 text-xs mt-1 mb-4">בחר תלמיד לקניות</p>
-           
-           <input 
-             type="text" 
-             placeholder="חפש תלמיד..." 
-             className="w-full bg-black/20 border border-accent/20 rounded-lg px-4 py-2 text-sm text-txt outline-none focus:border-accent transition-colors"
-             value={searchTerm}
-             onChange={(e) => setSearchTerm(e.target.value)}
-           />
-        </div>
-        
-        <div className="flex-1 overflow-y-auto grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 pb-24">
-          {filteredStudents.map(s => (
-            <button
-              key={s.name}
-              onClick={() => setSelectedStudentId(s.name)}
-              className="bg-card hover:bg-white/5 p-2 rounded-xl border border-border flex flex-col items-center gap-1.5 transition-all active:scale-95 text-center shadow-sm group"
-            >
-               <div className="w-8 h-8 rounded-full bg-black/20 flex items-center justify-center text-[10px] font-bold text-gray-400 border border-white/5 group-hover:border-accent/50 transition-colors">
-                  {s.name.charAt(0)}
-               </div>
-               <span className="font-bold text-[10px] sm:text-xs text-txt truncate w-full">{s.name}</span>
-               <span className="text-[10px] font-black text-accent bg-accent/10 px-1.5 rounded-full border border-accent/20">{s.total}₪</span>
-            </button>
-          ))}
-        </div>
-      </div>
-    );
+  const handleStudentRequest = () => {
+      const student = students.find(s => s.name === loggedInStudentName);
+      if (!student) return;
+
+      const newRequests: PurchaseRequest[] = cart.map(item => ({
+          id: Date.now() + Math.random().toString(),
+          itemId: item.id,
+          itemName: item.name,
+          itemPrice: item.price,
+          date: new Date().toLocaleDateString('he-IL'),
+          timestamp: Date.now(),
+          status: 'pending'
+      }));
+
+      onUpdateStudent({
+          ...student,
+          requests: [...(student.requests || []), ...newRequests]
+      });
+
+      setCart([]);
+      setIsCartOpen(false);
+      setShowRequestSuccess(true);
+      setTimeout(() => setShowRequestSuccess(false), 3000);
+  };
+
+  // ==========================================
+  // RENDER: TEACHER VIEW
+  // ==========================================
+  if (userRole === 'teacher') {
+      const pendingRequests = getAllPendingRequests();
+
+      return (
+          <div className="h-full flex flex-col bg-primary text-txt">
+              {/* Header */}
+              <div className="p-4 bg-card border-b border-accent/20 flex justify-between items-center shadow-md z-10">
+                  <div className="flex items-center gap-2">
+                      <Store className="text-accent" size={24} />
+                      <h2 className="text-xl font-black">ניהול חנות</h2>
+                  </div>
+                  <div className="flex bg-black/20 p-1 rounded-xl">
+                      <button 
+                        onClick={() => setActiveTab('requests')}
+                        className={`px-4 py-2 rounded-lg text-xs font-bold transition ${activeTab === 'requests' ? 'bg-accent text-accent-fg shadow-lg' : 'text-gray-400 hover:text-white'}`}
+                      >
+                          בקשות ({pendingRequests.length})
+                      </button>
+                      <button 
+                        onClick={() => setActiveTab('inventory')}
+                        className={`px-4 py-2 rounded-lg text-xs font-bold transition ${activeTab === 'inventory' ? 'bg-accent text-accent-fg shadow-lg' : 'text-gray-400 hover:text-white'}`}
+                      >
+                          ניהול מלאי
+                      </button>
+                  </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4">
+                  {/* Requests Tab */}
+                  {activeTab === 'requests' && (
+                      <div className="space-y-3">
+                          {pendingRequests.length === 0 ? (
+                              <div className="text-center py-20 opacity-50 flex flex-col items-center">
+                                  <Check size={48} className="text-green-500 mb-2"/>
+                                  <p>אין בקשות ממתינות. הכל טופל!</p>
+                              </div>
+                          ) : (
+                              pendingRequests.map((entry) => (
+                                  <div key={entry.req.id} className="bg-card border border-white/10 p-4 rounded-2xl flex justify-between items-center shadow-sm animate-in slide-in-from-right-2">
+                                      <div className="flex-1">
+                                          <div className="flex items-center gap-2 mb-1">
+                                              <span className="font-bold text-white text-lg">{entry.student.name}</span>
+                                              <span className="text-[10px] text-gray-400 bg-white/5 px-2 py-0.5 rounded-full">{entry.req.date}</span>
+                                          </div>
+                                          <div className="flex items-center gap-2 text-sm text-gray-300">
+                                              <span>מבקש/ת לרכוש:</span>
+                                              <span className="text-accent font-bold">{entry.req.itemName}</span>
+                                              <span className="bg-accent/10 text-accent px-1.5 rounded text-xs font-mono">{entry.req.itemPrice}₪</span>
+                                          </div>
+                                          <div className="text-xs text-gray-500 mt-1">
+                                              יתרה נוכחית: {entry.student.total}₪ | מלאי נותר: {config.storeItems.find(i => i.id === entry.req.itemId)?.stock || 0}
+                                          </div>
+                                      </div>
+                                      <div className="flex gap-2">
+                                          <button 
+                                            onClick={() => handleRejectRequest(entry)}
+                                            className="p-3 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white rounded-xl transition border border-red-500/20"
+                                            title="דחה בקשה"
+                                          >
+                                              <X size={20} />
+                                          </button>
+                                          <button 
+                                            onClick={() => handleApproveRequest(entry)}
+                                            className="p-3 bg-green-500/10 text-green-500 hover:bg-green-500 hover:text-white rounded-xl transition border border-green-500/20 shadow-lg"
+                                            title="אשר רכישה"
+                                          >
+                                              <Check size={20} />
+                                          </button>
+                                      </div>
+                                  </div>
+                              ))
+                          )}
+                      </div>
+                  )}
+
+                  {/* Inventory Tab */}
+                  {activeTab === 'inventory' && (
+                      <div className="space-y-4">
+                          <button 
+                            onClick={() => {
+                                const newItem: StoreItem = { id: Date.now().toString(), name: "מוצר חדש", emoji: "📦", price: 0, stock: 0 };
+                                onUpdateConfig({ ...config, storeItems: [newItem, ...config.storeItems] });
+                                setEditingItemId(newItem.id);
+                            }}
+                            className="w-full py-3 border border-dashed border-white/20 rounded-xl text-gray-400 hover:text-accent hover:border-accent/50 hover:bg-accent/5 transition flex items-center justify-center gap-2"
+                          >
+                              <Plus size={18} /> הוסף פריט חדש
+                          </button>
+
+                          <div className="grid grid-cols-1 gap-3">
+                              {config.storeItems.map(item => (
+                                  <div key={item.id} className="bg-white/5 p-3 rounded-xl flex items-center gap-3 border border-white/5">
+                                      <div className="w-12 h-12 bg-black/30 rounded-lg flex items-center justify-center text-2xl">
+                                          {item.image ? <img src={item.image} className="w-full h-full object-cover rounded-lg"/> : item.emoji}
+                                      </div>
+                                      
+                                      <div className="flex-1 grid grid-cols-2 gap-2">
+                                          <div className="col-span-2">
+                                              <input 
+                                                type="text" 
+                                                className="bg-transparent text-white font-bold w-full outline-none border-b border-transparent focus:border-accent text-sm"
+                                                value={item.name}
+                                                onChange={(e) => handleInventoryUpdate(item.id, 'name', e.target.value)}
+                                                placeholder="שם המוצר"
+                                              />
+                                          </div>
+                                          <div className="flex items-center gap-1 bg-black/20 px-2 py-1 rounded-lg">
+                                              <span className="text-[10px] text-gray-500">מחיר:</span>
+                                              <input 
+                                                type="number" 
+                                                className="bg-transparent text-accent font-mono w-full outline-none text-center font-bold"
+                                                value={item.price}
+                                                onChange={(e) => handleInventoryUpdate(item.id, 'price', parseInt(e.target.value))}
+                                              />
+                                          </div>
+                                          <div className="flex items-center gap-1 bg-black/20 px-2 py-1 rounded-lg">
+                                              <span className="text-[10px] text-gray-500">מלאי:</span>
+                                              <input 
+                                                type="number" 
+                                                className={`bg-transparent font-mono w-full outline-none text-center font-bold ${item.stock === 0 ? 'text-red-500' : 'text-white'}`}
+                                                value={item.stock}
+                                                onChange={(e) => handleInventoryUpdate(item.id, 'stock', parseInt(e.target.value))}
+                                              />
+                                          </div>
+                                      </div>
+
+                                      <button 
+                                        onClick={() => handleDeleteItem(item.id)}
+                                        className="text-gray-600 hover:text-red-500 p-2"
+                                      >
+                                          <Trash2 size={16} />
+                                      </button>
+                                  </div>
+                              ))}
+                          </div>
+                      </div>
+                  )}
+              </div>
+          </div>
+      );
   }
 
-  // --- Shopping View (E-commerce Style) ---
+  // ==========================================
+  // RENDER: STUDENT VIEW (REQUEST MODE)
+  // ==========================================
+  
+  const student = students.find(s => s.name === loggedInStudentName);
+  if (!student) return <div className="p-10 text-center">התחבר כתלמיד לצפייה בחנות</div>;
+
+  const cartTotal = cart.reduce((sum, item) => sum + item.price, 0);
+  const pendingRequestsCount = (student.requests || []).filter(r => r.status === 'pending').length;
+
   return (
     <div className="h-full flex flex-col relative bg-primary">
-      {/* Compact Header */}
+      {/* Student Header */}
       <div className="bg-card border-b border-accent/20 px-4 py-3 shadow-md z-10 sticky top-0 flex justify-between items-center">
         <div className="flex items-center gap-3">
-            <button 
-            onClick={() => { setSelectedStudentId(null); setCart([]); }}
-            className="w-8 h-8 flex items-center justify-center bg-white/5 rounded-full text-gray-400 hover:text-white transition-colors"
-            >
-            <ChevronLeft size={18} />
-            </button>
             <div>
-                <h2 className="text-sm font-black text-white leading-none">{selectedStudent.name}</h2>
+                <h2 className="text-sm font-black text-white leading-none">החנות הכיתתית</h2>
                 <div className="flex items-center gap-1 text-accent mt-0.5">
                     <Coins size={10} fill="currentColor"/>
-                    <span className="text-xs font-bold">{selectedStudent.total} נק'</span>
+                    <span className="text-xs font-bold">היתרה שלך: {student.total} נק'</span>
                 </div>
             </div>
         </div>
         
-        {/* Cart Summary (Small) */}
-        <button 
-             onClick={() => cart.length > 0 && setIsCartOpen(true)}
-             className={`flex items-center gap-2 px-3 py-1.5 rounded-full transition-colors ${cart.length > 0 ? 'bg-accent text-accent-fg' : 'bg-white/5 text-gray-500'}`}
-        >
-            <ShoppingCart size={16} />
-            {cart.length > 0 && <span className="text-xs font-bold">{cartTotal}</span>}
-        </button>
+        {/* Cart Summary */}
+        <div className="flex gap-2">
+            {pendingRequestsCount > 0 && (
+                <div className="flex items-center gap-1 px-2 py-1 bg-orange-500/20 text-orange-500 rounded-full text-[10px] font-bold border border-orange-500/30">
+                    <Clock size={10} />
+                    {pendingRequestsCount} בקשות
+                </div>
+            )}
+            <button 
+                onClick={() => cart.length > 0 && setIsCartOpen(true)}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-full transition-colors ${cart.length > 0 ? 'bg-accent text-accent-fg' : 'bg-white/5 text-gray-500'}`}
+            >
+                <ShoppingCart size={16} />
+                {cart.length > 0 && <span className="text-xs font-bold">{cartTotal}</span>}
+            </button>
+        </div>
       </div>
 
-      {/* Items Grid - E-commerce Layout */}
-      <div className="flex-1 overflow-y-auto p-3 grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3 pb-32 content-start">
+      {/* Items Grid */}
+      <div className="flex-1 overflow-y-auto p-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 pb-32 content-start">
         {config.storeItems.length === 0 && (
-            <div className="col-span-3 text-center text-gray-500 py-10">
+            <div className="col-span-2 text-center text-gray-500 py-10">
                 <Store size={40} className="mx-auto mb-2 opacity-20"/>
-                <span className="text-sm">החנות ריקה.</span>
+                <span className="text-sm">החנות ריקה כרגע.</span>
             </div>
         )}
         
@@ -193,58 +351,51 @@ export const StoreView: React.FC<StoreViewProps> = ({
           const inCartCount = cart.filter(c => c.id === item.id).length;
           const remainingStock = item.stock - inCartCount;
           const isOutOfStock = remainingStock <= 0;
-          const canAfford = selectedStudent.total >= (cartTotal + item.price);
+          const canAfford = student.total >= (cartTotal + item.price);
 
           return (
             <div 
               key={item.id}
               className={`group relative bg-card rounded-xl border overflow-hidden flex flex-col transition-all duration-300 ${!isOutOfStock ? 'border-border hover:border-accent/50 shadow-sm' : 'border-white/5 opacity-60 grayscale'}`}
             >
-               {/* Image Area - Aspect Ratio Square */}
+               {/* Image Area */}
                <div className="aspect-square w-full bg-black/20 flex items-center justify-center overflow-hidden relative">
                    {item.image ? (
                        <img src={item.image} alt={item.name} className="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-500" />
                    ) : (
-                       <span className="text-3xl drop-shadow-md transform group-hover:scale-110 transition-transform">{item.emoji}</span>
+                       <span className="text-4xl drop-shadow-md transform group-hover:scale-110 transition-transform">{item.emoji}</span>
                    )}
                    
-                   {/* Stock Badge Overlay */}
                    {isOutOfStock && (
                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                           <span className="text-[10px] font-bold text-white bg-red-500 px-2 py-0.5 rounded-full">אזל</span>
-                       </div>
-                   )}
-                   {!isOutOfStock && remainingStock < 5 && (
-                       <div className="absolute top-1 right-1 text-[8px] font-bold px-1.5 py-0.5 rounded bg-orange-500/80 text-white">
-                           נותרו {remainingStock}
+                           <span className="text-[10px] font-bold text-white bg-red-500 px-2 py-0.5 rounded-full">אזל המלאי</span>
                        </div>
                    )}
                </div>
                
                {/* Product Info */}
-               <div className="p-2 flex flex-col flex-1">
-                   <h3 className="font-bold text-txt text-[10px] sm:text-xs leading-tight line-clamp-2 mb-1 h-6">{item.name}</h3>
+               <div className="p-3 flex flex-col flex-1">
+                   <h3 className="font-bold text-white text-xs leading-tight line-clamp-2 mb-2 h-8">{item.name}</h3>
                    
-                   <div className="mt-auto flex items-end justify-between">
-                       <span className="text-xs font-black text-accent">{item.price}</span>
+                   <div className="mt-auto flex items-center justify-between">
+                       <span className="text-sm font-black text-accent">{item.price}</span>
                        
                        <button
-                        onClick={() => handleAddToCart(item)}
+                        onClick={() => setCart([...cart, item])}
                         disabled={isOutOfStock || !canAfford}
-                        className={`w-6 h-6 rounded-full flex items-center justify-center transition-transform active:scale-90 ${
+                        className={`w-8 h-8 rounded-full flex items-center justify-center transition-transform active:scale-90 ${
                             !isOutOfStock && canAfford
                             ? 'bg-accent text-accent-fg shadow-md hover:brightness-110' 
                             : 'bg-white/5 text-gray-600 cursor-not-allowed'
                         }`}
                         >
-                            {isOutOfStock || !canAfford ? <Lock size={10}/> : <Plus size={14} />}
+                            {isOutOfStock || !canAfford ? <Lock size={12}/> : <Plus size={16} />}
                         </button>
                    </div>
                </div>
                
-               {/* In Cart Indicator Overlay */}
                {inCartCount > 0 && (
-                   <div className="absolute top-1 left-1 bg-green-500 text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center shadow-md z-10">
+                   <div className="absolute top-2 left-2 bg-green-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center shadow-md z-10 animate-bounce">
                        {inCartCount}
                    </div>
                )}
@@ -253,7 +404,7 @@ export const StoreView: React.FC<StoreViewProps> = ({
         })}
       </div>
 
-      {/* Floating Cart (Only if items exist) */}
+      {/* Floating Cart Button */}
       {cart.length > 0 && !isCartOpen && (
           <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 animate-in slide-in-from-bottom-5 fade-in w-11/12 max-w-sm">
               <button 
@@ -268,6 +419,19 @@ export const StoreView: React.FC<StoreViewProps> = ({
                   </div>
                   <span className="text-lg">{cartTotal} נק'</span>
               </button>
+          </div>
+      )}
+
+      {/* Success Message Overlay */}
+      {showRequestSuccess && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in">
+              <div className="bg-card p-8 rounded-3xl border border-green-500/50 text-center shadow-2xl transform scale-110">
+                  <div className="w-16 h-16 bg-green-500 text-white rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
+                      <Check size={32} strokeWidth={4} />
+                  </div>
+                  <h3 className="text-2xl font-black text-white mb-2">הבקשה נשלחה!</h3>
+                  <p className="text-gray-400 text-sm">המורה יאשר את הרכישה בקרוב.</p>
+              </div>
           </div>
       )}
 
@@ -293,11 +457,20 @@ export const StoreView: React.FC<StoreViewProps> = ({
                                   <div className="w-10 h-10 rounded bg-black/30 flex items-center justify-center overflow-hidden">
                                       {item.image ? <img src={item.image} className="w-full h-full object-cover"/> : <span className="text-lg">{item.emoji}</span>}
                                   </div>
-                                  <span className="font-bold text-sm">{item.name}</span>
+                                  <span className="font-bold text-sm text-white">{item.name}</span>
                               </div>
                               <div className="flex items-center gap-3">
                                   <span className="font-bold text-accent">{item.price}₪</span>
-                                  <button onClick={() => handleRemoveFromCart(idx)} className="text-red-500/50 hover:text-red-500 bg-red-500/10 p-1.5 rounded-lg"><Trash2 size={14}/></button>
+                                  <button 
+                                    onClick={() => {
+                                        const newCart = [...cart];
+                                        newCart.splice(idx, 1);
+                                        setCart(newCart);
+                                    }} 
+                                    className="text-red-500/50 hover:text-red-500 bg-red-500/10 p-1.5 rounded-lg"
+                                  >
+                                      <Trash2 size={14}/>
+                                  </button>
                               </div>
                           </div>
                       ))}
@@ -309,81 +482,14 @@ export const StoreView: React.FC<StoreViewProps> = ({
                           <span className="text-3xl font-black text-accent">{cartTotal}₪</span>
                       </div>
                       <button 
-                        onClick={performCheckout}
-                        className="w-full py-4 bg-green-600 text-white font-bold rounded-xl shadow-lg flex items-center justify-center gap-2 text-lg active:scale-95 transition-transform"
+                        onClick={handleStudentRequest}
+                        className="w-full py-4 bg-gradient-to-r from-accent to-yellow-600 text-black font-bold rounded-xl shadow-lg flex items-center justify-center gap-2 text-lg active:scale-95 transition-transform"
                       >
-                          <Check size={24} /> סיים רכישה
+                          <Send size={20} /> שלח בקשה למורה
                       </button>
                   </div>
               </div>
           </div>
-      )}
-
-      {/* Receipt Modal */}
-      {showReceipt && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-6 animate-in fade-in duration-300">
-           <div className="bg-white text-black w-full max-w-sm rounded-none shadow-2xl relative overflow-hidden flex flex-col items-center p-8 receipt-paper">
-              {/* Receipt Visuals */}
-              <div className="absolute top-0 left-0 right-0 h-4 bg-[radial-gradient(circle,transparent_50%,#fff_50%)] bg-[length:16px_16px] -mt-2"></div>
-              
-              <div className="mb-4 text-center">
-                  <div className="w-12 h-12 bg-black text-white rounded-full flex items-center justify-center mx-auto mb-2">
-                      <Receipt size={24} />
-                  </div>
-                  <h2 className="text-2xl font-black uppercase tracking-widest">קבלה</h2>
-                  <p className="text-xs text-gray-500">{new Date().toLocaleString('he-IL')}</p>
-              </div>
-
-              <div className="w-full border-t-2 border-dashed border-gray-300 my-2"></div>
-
-              <div className="w-full space-y-2 mb-4">
-                  {showReceipt.items.map((item, i) => (
-                      <div key={i} className="flex justify-between text-sm font-bold border-b border-gray-100 pb-1 last:border-0">
-                          <span>{item.name}</span>
-                          <span>{item.price}</span>
-                      </div>
-                  ))}
-              </div>
-
-              <div className="w-full border-t-2 border-black my-2"></div>
-
-              <div className="w-full flex justify-between text-xl font-black mb-6">
-                  <span>סה"כ</span>
-                  <span>{showReceipt.total}₪</span>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="w-full grid grid-cols-2 gap-2 mb-4">
-                  <button 
-                    onClick={sendTeacherNotification}
-                    className="col-span-2 py-2 bg-green-100 text-green-700 font-bold text-xs rounded-lg flex items-center justify-center gap-2 hover:bg-green-200"
-                  >
-                      <Send size={14}/> עדכון למורה (וואטסאפ)
-                  </button>
-                  <button 
-                    onClick={sendStudentWANotification}
-                    className="py-2 bg-gray-100 text-gray-600 font-bold text-xs rounded-lg flex items-center justify-center gap-1 hover:bg-gray-200"
-                  >
-                      <Phone size={12}/> תלמיד (WA)
-                  </button>
-                  <button 
-                    onClick={sendStudentEmailNotification}
-                    className="py-2 bg-gray-100 text-gray-600 font-bold text-xs rounded-lg flex items-center justify-center gap-1 hover:bg-gray-200"
-                  >
-                      <Mail size={12}/> תלמיד (Mail)
-                  </button>
-              </div>
-
-              <button 
-                onClick={() => setShowReceipt(null)}
-                className="w-full py-3 bg-black text-white font-bold uppercase tracking-widest hover:bg-gray-800 transition"
-              >
-                  סגור
-              </button>
-
-              <div className="absolute bottom-0 left-0 right-0 h-4 bg-[radial-gradient(circle,transparent_50%,#fff_50%)] bg-[length:16px_16px] -mb-2 transform rotate-180"></div>
-           </div>
-        </div>
       )}
     </div>
   );

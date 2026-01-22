@@ -13,6 +13,18 @@ export interface GradeEntry {
   score: number; // Changed to number for calculations
 }
 
+export type RequestStatus = 'pending' | 'approved' | 'rejected';
+
+export interface PurchaseRequest {
+  id: string;
+  itemId: string;
+  itemName: string;
+  itemPrice: number;
+  date: string;
+  timestamp: number;
+  status: RequestStatus;
+}
+
 export interface Purchase {
   id: string;
   itemId: string;
@@ -32,7 +44,8 @@ export interface Student {
   name: string;
   total: number;
   logs: LogEntry[];
-  purchases?: Purchase[]; 
+  purchases?: Purchase[];
+  requests?: PurchaseRequest[]; // New: Pending requests
   lastNachatDate?: string;
   
   // Semester Data
@@ -109,6 +122,9 @@ export interface AppConfig {
   learningSubjects: string[];
   learningResources: LearningResource[];
 
+  // Security & Site Management
+  isSystemLocked?: boolean; // New: Prevents student access
+
   rules: string;
   theme: ThemeType;
   googleAppsScriptUrl?: string; 
@@ -165,6 +181,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   ],
   learningSubjects: ['משנה', 'גמרא', 'חומש', 'הלכה', 'כללי'],
   learningResources: [],
+  isSystemLocked: false,
   rules: `תקנון הכיתה:
 1. יש להגיע בזמן לשיעורים.
 2. יש להביא ציוד לימודי מלא.

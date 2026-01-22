@@ -168,7 +168,7 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
           </button>
         </div>
 
-        {/* Tab Switcher - Now available to students too */}
+        {/* Tab Switcher - Visible to Students too */}
         {!filterKeyword && (
             <div className="flex px-6 gap-2 mb-2">
                 <button 
@@ -188,7 +188,7 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
 
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           
-          {/* Admin Tools: Password Reset */}
+          {/* Admin Tools: Password Reset - TEACHER ONLY */}
           {isAuthenticated && activeTab === 'behavior' && !filterKeyword && !isSemesterMode && (
               <div className="flex gap-2">
                   {student.isHiddenFromPodium ? (
@@ -212,7 +212,7 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
               </div>
           )}
 
-          {/* Quick Actions / Manual Add - Only show if TEACHER */}
+          {/* Quick Actions / Manual Add - TEACHER ONLY */}
           {isAuthenticated && activeTab === 'behavior' && !filterKeyword && !isSemesterMode && (
             <div className="bg-accent/5 p-4 rounded-3xl border border-accent/20">
                {!showAddAction && !showChallengeSelect ? (
@@ -368,7 +368,7 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
           {/* Behavior Content */}
           {activeTab === 'behavior' && (
             <>
-                {/* Parents Section - Visible to all, but only Teacher can click WA */}
+                {/* Parents Section - Visible to all */}
                 <div className="space-y-3">
                     <h3 className="text-[10px] font-bold text-gray-500 uppercase flex items-center gap-2 mr-1">
                     <Users size={12}/> אנשי קשר ודיווחי נחת

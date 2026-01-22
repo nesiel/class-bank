@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Database, Student, AppConfig, DEFAULT_CONFIG, ThemeType, StoreItem, Purchase, UserRole, Challenge, LearningResource, ResourceType } from './types';
 import { parseExcel, fileToBase64, parseGradesExcel } from './utils';
@@ -10,19 +11,19 @@ import { LoginScreen } from './components/LoginScreen';
 import { LearningCenter } from './components/LearningCenter';
 import { GoogleGenAI } from "@google/genai";
 import { 
-  Home, ShieldCheck, ChevronUp, ChevronDown, Settings, Trash2, Trophy, FileSpreadsheet, Coins, Users, Phone, Download, UserPlus, LayoutGrid, Book, X, PlusCircle, ArrowUp, ArrowDown, GripVertical, MessageCircle, Undo, Scroll, Star, AlertCircle, Palette, Store, Image as ImageIcon, ShoppingBag, Plus, Package, Wand2, Loader2, Save, GraduationCap, LogOut, MinusCircle, KeyRound, Lock, Target, Cloud, Upload, RefreshCw, CheckSquare, Square, Check, BookOpen, Link as LinkIcon, FileText, HardDrive, FileQuestion, Copy, ExternalLink, Crown, Search, Activity, Eye, EyeOff
+  Home, ShieldCheck, ChevronUp, ChevronDown, Settings, Trash2, Trophy, FileSpreadsheet, Coins, Users, Phone, Download, UserPlus, LayoutGrid, Book, X, PlusCircle, ArrowUp, ArrowDown, GripVertical, MessageCircle, Undo, Scroll, Star, AlertCircle, Palette, Store, Image as ImageIcon, ShoppingBag, Plus, Package, Wand2, Loader2, Save, GraduationCap, LogOut, MinusCircle, KeyRound, Lock, Target, Cloud, Upload, RefreshCw, CheckSquare, Square, Check, BookOpen, Link as LinkIcon, FileText, HardDrive, FileQuestion, Copy, ExternalLink, Crown, Search, Activity, Eye, EyeOff, Power, BrainCircuit, FileType
 } from 'lucide-react';
 
 // Define the available admin sections
 const ADMIN_SECTIONS = [
   { id: 'cloud_sync', label: 'סנכרון לענן (Google Sheets)', icon: Cloud, color: 'text-sky-500', bg: 'bg-sky-500/10' },
   { id: 'import_files', label: 'ייבוא נתונים (אקסל)', icon: FileSpreadsheet, color: 'text-green-500', bg: 'bg-green-500/10' },
-  { id: 'learning_manage', label: 'ניהול מרכז למידה', icon: BookOpen, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+  { id: 'learning_manage', label: 'ניהול מרכז למידה ו-AI', icon: BookOpen, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
   { id: 'challenges_manage', label: 'ניהול אתגרים', icon: Target, color: 'text-orange-500', bg: 'bg-orange-500/10' },
   { id: 'store_manage', label: 'ניהול חנות ומלאי', icon: Store, color: 'text-accent', bg: 'bg-accent/10' },
   { id: 'score_settings', label: 'הגדרות ניקוד', icon: Settings, color: 'text-blue-400', bg: 'bg-blue-500/10' },
   { id: 'rules_manage', label: 'עריכת תקנון', icon: Book, color: 'text-purple-400', bg: 'bg-purple-500/10' },
-  { id: 'general_settings', label: 'הגדרות כלליות', icon: Phone, color: 'text-gray-400', bg: 'bg-gray-500/10' },
+  { id: 'general_settings', label: 'הגדרות כלליות ואבטחה', icon: Phone, color: 'text-gray-400', bg: 'bg-gray-500/10' },
   { id: 'backup_reset', label: 'גיבוי ואיפוס', icon: Download, color: 'text-red-400', bg: 'bg-red-500/10' },
   { id: 'theme_settings', label: 'עיצוב', icon: Palette, color: 'text-pink-400', bg: 'bg-pink-500/10' },
 ];
@@ -65,10 +66,11 @@ export default function App() {
   const [newResource, setNewResource] = useState<{title: string, subject: string, type: ResourceType, url: string}>({
       title: "", subject: "", type: 'link', url: ""
   });
-  // Quiz Generator State
-  const [quizMaterial, setQuizMaterial] = useState("");
-  const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
-  const [generatedScript, setGeneratedScript] = useState<string | null>(null);
+  
+  // AI Generator State (Quiz & Study Guide)
+  const [aiSourceText, setAiSourceText] = useState("");
+  const [isGeneratingAi, setIsGeneratingAi] = useState(false);
+  const [aiResult, setAiResult] = useState<{type: 'script' | 'text', content: string} | null>(null);
   
   // Admin Collapsibles State
   const [adminCollapsed, setAdminCollapsed] = useState<Record<string, boolean>>({
@@ -220,6 +222,7 @@ export default function App() {
               total: 0,
               logs: [],
               purchases: [],
+              requests: [], // Reset requests
               lastNachatDate: undefined,
               semesterScore: undefined,
               semesterLogs: undefined,
@@ -517,17 +520,20 @@ export default function App() {
       else if (type === 'review') setNewResource(prev => ({...prev, type: 'form', title: 'חזרה למבחן', url: ''}));
   };
 
-  const handleGenerateQuizScript = async () => {
-      if (!quizMaterial.trim()) { alert("נא להדביק חומר לימוד לבוחן"); return; }
-      setIsGeneratingQuiz(true);
+  // --- AI Logic (Quiz & Study Guide) ---
+
+  const handleGenerateQuiz = async () => {
+      if (!aiSourceText.trim()) { alert("נא להדביק חומר לימוד"); return; }
+      setIsGeneratingAi(true);
       try {
           const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
           const prompt = `
-            Analyze the following Hebrew text and create a quiz with 4-5 multiple choice questions.
+            Analyze the following Hebrew text and create a quiz with 5 multiple choice questions.
             Return ONLY a valid JSON array of objects.
-            Structure: [{ "q": "Question", "opts": ["Opt1", "Opt2"], "a": 0, "p": 20 }]
+            Structure: [{ "q": "Question", "opts": ["Opt1", "Opt2", "Opt3", "Opt4"], "a": 0, "p": 20 }]
+            index "a" is the correct answer (0-3).
             
-            Text: ${quizMaterial}
+            Text: ${aiSourceText}
           `;
           const response = await ai.models.generateContent({ model: "gemini-3-flash-preview", contents: prompt });
           
@@ -540,17 +546,55 @@ function createGeneratedQuiz() {
   var form = FormApp.create('בוחן חדש (נוצר ע"י AI)');
   form.setIsQuiz(true);
   form.addTextItem().setTitle('שם התלמיד').setRequired(true);
-  var questions = ${JSON.stringify(questions)};
+  var questions = ${JSON.stringify(questions, null, 2)};
+  
   questions.forEach(function(q) {
     var item = form.addMultipleChoiceItem();
-    var choices = q.opts.map(function(opt, index) { return item.createChoice(opt, index === q.a); });
+    var choices = q.opts.map(function(opt, index) { 
+      return item.createChoice(opt, index === q.a); 
+    });
     item.setTitle(q.q).setPoints(q.p).setChoices(choices);
   });
+  
   Logger.log('Form URL: ' + form.getPublishedUrl());
+  Logger.log('Edit URL: ' + form.getEditUrl());
 }`;
-          setGeneratedScript(scriptCode);
-          setQuizMaterial("");
-      } catch (e) { console.error(e); alert("שגיאה ביצירת הבוחן."); } finally { setIsGeneratingQuiz(false); }
+          setAiResult({ type: 'script', content: scriptCode });
+      } catch (e) { 
+          console.error(e); 
+          alert("שגיאה ביצירת הבוחן. נסה שוב או קצר את הטקסט."); 
+      } finally { 
+          setIsGeneratingAi(false); 
+      }
+  };
+
+  const handleGenerateStudyGuide = async () => {
+      if (!aiSourceText.trim()) { alert("נא להדביק חומר לימוד"); return; }
+      setIsGeneratingAi(true);
+      try {
+          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+          const prompt = `
+            Act as a teacher. Create a study guide summary based on the following text in Hebrew.
+            
+            Structure:
+            1. Title: "דף חזרה למבחן"
+            2. "סיכום קצר": 3-4 sentences summarizing the core topic.
+            3. "מושגים חשובים": A list of key terms and their short definitions.
+            4. "שאלות חזרה": 3-4 open-ended review questions for the student to practice.
+            
+            Keep it clean, formatted, and easy to read.
+            
+            Text: ${aiSourceText}
+          `;
+          const response = await ai.models.generateContent({ model: "gemini-3-flash-preview", contents: prompt });
+          
+          setAiResult({ type: 'text', content: response.text || "שגיאה ביצירת התוכן." });
+      } catch (e) {
+          console.error(e);
+          alert("שגיאה ביצירת הסיכום.");
+      } finally {
+          setIsGeneratingAi(false);
+      }
   };
 
   // --- Cloud Sync Logic ---
@@ -606,7 +650,14 @@ function createGeneratedQuiz() {
   // --- Render Logic ---
   
   if (userRole === 'guest') {
-    return <LoginScreen students={Object.values(db) as Student[]} teacherPin={config.teacherPin} onLogin={handleLogin} onEnterLearning={() => setCurrentView('learning')} logo={config.logo} />;
+    return <LoginScreen 
+        students={Object.values(db) as Student[]} 
+        teacherPin={config.teacherPin} 
+        onLogin={handleLogin} 
+        onEnterLearning={() => setCurrentView('learning')} 
+        logo={config.logo} 
+        isSystemLocked={config.isSystemLocked}
+    />;
   }
   
   if (currentView === 'learning') {
@@ -760,7 +811,7 @@ function createGeneratedQuiz() {
                                  <div className="flex items-center gap-2">
                                      <button 
                                         onClick={() => setIsStudentListExpanded(!isStudentListExpanded)}
-                                        className="p-2 bg-white/5 rounded-full hover:bg-white/10 text-gray-400"
+                                        className={`p-2 rounded-full hover:bg-white/10 text-gray-400 transition ${isStudentListExpanded ? 'bg-white/10 text-white' : 'bg-white/5'}`}
                                      >
                                          {isStudentListExpanded ? <EyeOff size={16}/> : <Eye size={16}/>}
                                      </button>
@@ -795,7 +846,9 @@ function createGeneratedQuiz() {
                                 </div>
                              )}
                              {!isStudentListExpanded && (
-                                 <p className="text-center text-xs text-gray-500 italic py-4">הרשימה מוסתרת. לחץ על העין כדי להציג.</p>
+                                 <div className="text-center py-4 bg-white/5 rounded-xl border border-dashed border-white/10">
+                                     <p className="text-xs text-gray-500 italic">רשימת התלמידים מוסתרת. לחץ על העין כדי להציג.</p>
+                                 </div>
                              )}
                          </div>
                      )}
@@ -864,7 +917,7 @@ function createGeneratedQuiz() {
                                         <div className="text-right">
                                             <h3 className="font-bold text-white text-sm">{s.name}</h3>
                                             <p className="text-xs text-gray-500 truncate">
-                                                {s.phoneMother ? `אמא: ${s.phoneMother}` : s.phoneFather ? `אבא: ${s.phoneFather}` : 'אין פרטי קשר'}
+                                                {s.phoneMother ? `אמא: ${s.phoneMother}` : s.phoneFather ? `אבא: ${s.phoneFather}` : 'לחץ לפרטים מלאים'}
                                             </p>
                                         </div>
                                     </div>
@@ -971,9 +1024,13 @@ function createGeneratedQuiz() {
                                             
                                             {sectionId === 'store_manage' && (
                                                 <div className="space-y-4">
+                                                    <p className="text-xs text-accent text-center bg-accent/10 p-2 rounded-lg">
+                                                        שים לב: ניהול המלאי המלא הועבר למסך החנות בלשונית "ניהול מלאי".
+                                                    </p>
                                                     <button onClick={handleAddStoreItem} className="w-full py-2 bg-accent/20 text-accent border border-accent/30 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-accent/30">
                                                         <Plus size={14}/> הוסף מוצר חדש
                                                     </button>
+                                                    {/* Keeping basic list for backup */}
                                                     <div className="space-y-2 max-h-60 overflow-y-auto">
                                                         {config.storeItems.map(item => (
                                                             <div key={item.id} className="bg-white/5 p-3 rounded-xl flex gap-3 items-start">
@@ -999,98 +1056,9 @@ function createGeneratedQuiz() {
                                                 </div>
                                             )}
 
-                                            {sectionId === 'challenges_manage' && (
-                                                <div className="space-y-3">
-                                                    <button onClick={handleAddChallenge} className="w-full py-2 bg-orange-500/20 text-orange-500 border border-orange-500/30 rounded-xl text-xs font-bold flex items-center justify-center gap-2">
-                                                        <Plus size={14}/> הוסף אתגר חדש
-                                                    </button>
-                                                    <div className="space-y-2">
-                                                        {(config.challenges || []).map(c => (
-                                                            <div key={c.id} className="bg-white/5 p-2 rounded-xl flex gap-2 items-center">
-                                                                <input type="text" value={c.title} onChange={(e) => handleUpdateChallenge(c.id, 'title', e.target.value)} className="flex-1 bg-transparent border-b border-white/10 text-xs text-white" placeholder="תיאור האתגר"/>
-                                                                <input type="number" value={c.reward} onChange={(e) => handleUpdateChallenge(c.id, 'reward', parseInt(e.target.value))} className="w-12 bg-black/20 rounded p-1 text-xs text-orange-400 text-center"/>
-                                                                <button onClick={() => handleDeleteChallenge(c.id)} className="text-red-500/50 hover:text-red-500"><Trash2 size={12}/></button>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            )}
-                                            
-                                            {sectionId === 'rules_manage' && (
-                                                <textarea 
-                                                    className="w-full h-32 bg-black/20 border border-white/10 rounded-xl p-3 text-xs text-white leading-relaxed"
-                                                    value={config.rules}
-                                                    onChange={(e) => saveConfig({...config, rules: e.target.value})}
-                                                />
-                                            )}
-
-                                            {sectionId === 'theme_settings' && (
-                                                <div className="flex gap-2">
-                                                    {(['current', 'modern', 'simple'] as ThemeType[]).map(t => (
-                                                        <button 
-                                                            key={t}
-                                                            onClick={() => saveConfig({...config, theme: t})}
-                                                            className={`flex-1 py-3 rounded-xl border capitalize text-xs font-bold ${config.theme === t ? 'bg-white text-black border-white' : 'bg-transparent text-gray-400 border-white/10'}`}
-                                                        >
-                                                            {t}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            )}
-
-                                            {sectionId === 'general_settings' && (
-                                                <div className="space-y-3">
-                                                    <div>
-                                                        <label className="text-xs text-gray-500">סיסמת מורה</label>
-                                                        <input type="text" value={config.teacherPin} onChange={(e) => saveConfig({...config, teacherPin: e.target.value})} className="w-full bg-black/20 border border-white/10 rounded-xl p-2 text-xs text-white"/>
-                                                    </div>
-                                                    <div>
-                                                        <label className="text-xs text-gray-500">טלפון מורה (לוואטסאפ)</label>
-                                                        <input type="text" value={config.teacherCell} onChange={(e) => saveConfig({...config, teacherCell: e.target.value})} className="w-full bg-black/20 border border-white/10 rounded-xl p-2 text-xs text-white"/>
-                                                    </div>
-                                                    <div>
-                                                        <label className="text-xs text-gray-500">סלוגן</label>
-                                                        <input type="text" value={config.slogan} onChange={(e) => saveConfig({...config, slogan: e.target.value})} className="w-full bg-black/20 border border-white/10 rounded-xl p-2 text-xs text-white"/>
-                                                    </div>
-                                                    <div>
-                                                        <label className="text-xs text-gray-500">לוגו (URL)</label>
-                                                        <input type="text" value={config.logo} onChange={(e) => saveConfig({...config, logo: e.target.value})} className="w-full bg-black/20 border border-white/10 rounded-xl p-2 text-xs text-white"/>
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            {sectionId === 'backup_reset' && (
-                                                <div className="space-y-2">
-                                                    <button onClick={() => {
-                                                        const blob = new Blob([JSON.stringify({db, config}, null, 2)], {type : 'application/json'});
-                                                        const url = URL.createObjectURL(blob);
-                                                        const a = document.createElement('a');
-                                                        a.href = url;
-                                                        a.download = `backup_${new Date().toLocaleDateString()}.json`;
-                                                        a.click();
-                                                    }} className="w-full py-2 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-xl text-xs font-bold">
-                                                        הורד גיבוי מקומי (JSON)
-                                                    </button>
-                                                    
-                                                    {!showResetConfirm ? (
-                                                        <button onClick={() => setShowResetConfirm(true)} className="w-full py-2 bg-red-500/10 text-red-500 border border-red-500/20 rounded-xl text-xs font-bold">
-                                                            איפוס תקופה מלא
-                                                        </button>
-                                                    ) : (
-                                                        <div className="bg-red-500/10 p-3 rounded-xl border border-red-500/30">
-                                                            <p className="text-red-500 text-xs font-bold mb-2 text-center">בטוח? הפעולה תמחק את כל הנקודות!</p>
-                                                            <div className="flex gap-2">
-                                                                <button onClick={handleFullReset} className="flex-1 bg-red-600 text-white py-2 rounded-lg text-xs font-bold">כן, אפס הכל</button>
-                                                                <button onClick={() => setShowResetConfirm(false)} className="flex-1 bg-white/10 text-white py-2 rounded-lg text-xs font-bold">ביטול</button>
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )}
-
                                             {sectionId === 'learning_manage' && (
                                                 <div className="space-y-4">
-                                                    {/* Add Subject */}
+                                                    {/* Folders & Resources */}
                                                     <div className="flex gap-2">
                                                         <input 
                                                             type="text" 
@@ -1102,7 +1070,6 @@ function createGeneratedQuiz() {
                                                         <button onClick={handleAddSubject} className="bg-emerald-500/20 text-emerald-500 border border-emerald-500/30 px-4 rounded-xl text-xs font-bold">הוסף</button>
                                                     </div>
                                                     
-                                                    {/* Delete Subject */}
                                                     <div className="flex flex-wrap gap-2">
                                                         {(config.learningSubjects || []).map(sub => (
                                                             <div key={sub} className="flex items-center gap-2 bg-white/5 px-3 py-1 rounded-full border border-white/10">
@@ -1114,7 +1081,6 @@ function createGeneratedQuiz() {
 
                                                     <div className="border-t border-white/5 my-2"></div>
 
-                                                    {/* Add Resource */}
                                                     <div className="space-y-2 bg-black/10 p-3 rounded-xl">
                                                         <p className="text-xs font-bold text-gray-400">הוספת קובץ / קישור</p>
                                                         <input 
@@ -1167,7 +1133,6 @@ function createGeneratedQuiz() {
                                                         <button onClick={handleAddResource} className="w-full bg-emerald-600 text-white py-2 rounded-lg text-xs font-bold mt-2">שמור במרכז הלמידה</button>
                                                     </div>
 
-                                                    {/* List Resources */}
                                                     <div className="max-h-40 overflow-y-auto space-y-1">
                                                         {(config.learningResources || []).map(r => (
                                                             <div key={r.id} className="flex justify-between items-center bg-white/5 p-2 rounded-lg">
@@ -1178,6 +1143,173 @@ function createGeneratedQuiz() {
                                                             </div>
                                                         ))}
                                                     </div>
+
+                                                    {/* AI GENERATOR SECTION */}
+                                                    <div className="border-t border-white/5 pt-4 mt-4">
+                                                        <h4 className="text-sm font-bold text-purple-400 flex items-center gap-2 mb-2">
+                                                            <BrainCircuit size={16}/> מחולל תוכן למידה (AI)
+                                                        </h4>
+                                                        
+                                                        <textarea 
+                                                            className="w-full h-24 bg-black/20 border border-white/10 rounded-xl p-2 text-xs text-white mb-2 focus:border-purple-500 outline-none"
+                                                            placeholder="הדבק כאן את חומר הלימוד (טקסט)..."
+                                                            value={aiSourceText}
+                                                            onChange={(e) => setAiSourceText(e.target.value)}
+                                                        />
+                                                        
+                                                        <div className="flex gap-2 mb-4">
+                                                            <button 
+                                                                onClick={handleGenerateQuiz}
+                                                                disabled={isGeneratingAi}
+                                                                className="flex-1 py-2 bg-purple-600/20 text-purple-400 border border-purple-500/30 rounded-lg text-xs font-bold hover:bg-purple-600/30 flex justify-center items-center gap-2"
+                                                            >
+                                                                {isGeneratingAi ? <Loader2 className="animate-spin" size={14}/> : <FileQuestion size={14}/>} צור בוחן (Forms)
+                                                            </button>
+                                                            <button 
+                                                                onClick={handleGenerateStudyGuide}
+                                                                disabled={isGeneratingAi}
+                                                                className="flex-1 py-2 bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded-lg text-xs font-bold hover:bg-blue-600/30 flex justify-center items-center gap-2"
+                                                            >
+                                                                {isGeneratingAi ? <Loader2 className="animate-spin" size={14}/> : <FileType size={14}/>} צור דף חזרה
+                                                            </button>
+                                                        </div>
+
+                                                        {aiResult && (
+                                                            <div className="bg-black/40 border border-white/10 rounded-xl p-3 animate-in fade-in">
+                                                                <div className="flex justify-between items-center mb-2">
+                                                                    <span className="text-xs text-gray-400 font-bold">
+                                                                        {aiResult.type === 'script' ? 'קוד ל-Google Apps Script (העתק והדבק בעורך)' : 'סיכום למבחן'}
+                                                                    </span>
+                                                                    <button 
+                                                                        onClick={() => {
+                                                                            navigator.clipboard.writeText(aiResult.content);
+                                                                            alert("הועתק ללוח!");
+                                                                        }}
+                                                                        className="text-xs text-accent hover:underline flex items-center gap-1"
+                                                                    >
+                                                                        <Copy size={12}/> העתק
+                                                                    </button>
+                                                                </div>
+                                                                <pre className={`text-[10px] text-gray-300 overflow-auto max-h-40 p-2 bg-black/30 rounded border border-white/5 ${aiResult.type === 'text' ? 'whitespace-pre-wrap font-sans' : 'font-mono'}`}>
+                                                                    {aiResult.content}
+                                                                </pre>
+                                                                {aiResult.type === 'script' && (
+                                                                    <a href="https://script.google.com/home" target="_blank" className="text-[10px] text-blue-400 mt-2 block hover:underline">
+                                                                        פתח את עורך הסקריפטים של גוגל &rarr;
+                                                                    </a>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* ... Rest of Admin Sections ... */}
+                                            {sectionId === 'challenges_manage' && (
+                                                <div className="space-y-3">
+                                                    <button onClick={handleAddChallenge} className="w-full py-2 bg-orange-500/20 text-orange-500 border border-orange-500/30 rounded-xl text-xs font-bold flex items-center justify-center gap-2">
+                                                        <Plus size={14}/> הוסף אתגר חדש
+                                                    </button>
+                                                    <div className="space-y-2">
+                                                        {(config.challenges || []).map(c => (
+                                                            <div key={c.id} className="bg-white/5 p-2 rounded-xl flex gap-2 items-center">
+                                                                <input type="text" value={c.title} onChange={(e) => handleUpdateChallenge(c.id, 'title', e.target.value)} className="flex-1 bg-transparent border-b border-white/10 text-xs text-white" placeholder="תיאור האתגר"/>
+                                                                <input type="number" value={c.reward} onChange={(e) => handleUpdateChallenge(c.id, 'reward', parseInt(e.target.value))} className="w-12 bg-black/20 rounded p-1 text-xs text-orange-400 text-center"/>
+                                                                <button onClick={() => handleDeleteChallenge(c.id)} className="text-red-500/50 hover:text-red-500"><Trash2 size={12}/></button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            
+                                            {sectionId === 'rules_manage' && (
+                                                <textarea 
+                                                    className="w-full h-32 bg-black/20 border border-white/10 rounded-xl p-3 text-xs text-white leading-relaxed"
+                                                    value={config.rules}
+                                                    onChange={(e) => saveConfig({...config, rules: e.target.value})}
+                                                />
+                                            )}
+
+                                            {sectionId === 'theme_settings' && (
+                                                <div className="flex gap-2">
+                                                    {(['current', 'modern', 'simple'] as ThemeType[]).map(t => (
+                                                        <button 
+                                                            key={t}
+                                                            onClick={() => saveConfig({...config, theme: t})}
+                                                            className={`flex-1 py-3 rounded-xl border capitalize text-xs font-bold ${config.theme === t ? 'bg-white text-black border-white' : 'bg-transparent text-gray-400 border-white/10'}`}
+                                                        >
+                                                            {t}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+
+                                            {sectionId === 'general_settings' && (
+                                                <div className="space-y-3">
+                                                    {/* Site Lock Toggle */}
+                                                    <div className="bg-white/5 border border-white/10 p-3 rounded-xl flex items-center justify-between">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className={`p-2 rounded-lg ${config.isSystemLocked ? 'bg-red-500/20 text-red-500' : 'bg-green-500/20 text-green-500'}`}>
+                                                                {config.isSystemLocked ? <Lock size={18}/> : <Power size={18}/>}
+                                                            </div>
+                                                            <div>
+                                                                <p className="text-xs font-bold text-white">נעילת אתר לתלמידים</p>
+                                                                <p className="text-[10px] text-gray-400">{config.isSystemLocked ? "האתר נעול כעת" : "האתר פתוח לשימוש"}</p>
+                                                            </div>
+                                                        </div>
+                                                        <button 
+                                                            onClick={() => saveConfig({...config, isSystemLocked: !config.isSystemLocked})}
+                                                            className={`px-4 py-2 rounded-lg text-xs font-bold text-white transition ${config.isSystemLocked ? 'bg-red-600 hover:bg-red-500' : 'bg-green-600 hover:bg-green-500'}`}
+                                                        >
+                                                            {config.isSystemLocked ? "פתח נעילה" : "נעל אתר"}
+                                                        </button>
+                                                    </div>
+
+                                                    <div>
+                                                        <label className="text-xs text-gray-500">סיסמת מורה</label>
+                                                        <input type="text" value={config.teacherPin} onChange={(e) => saveConfig({...config, teacherPin: e.target.value})} className="w-full bg-black/20 border border-white/10 rounded-xl p-2 text-xs text-white"/>
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-xs text-gray-500">טלפון מורה (לוואטסאפ)</label>
+                                                        <input type="text" value={config.teacherCell} onChange={(e) => saveConfig({...config, teacherCell: e.target.value})} className="w-full bg-black/20 border border-white/10 rounded-xl p-2 text-xs text-white"/>
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-xs text-gray-500">סלוגן</label>
+                                                        <input type="text" value={config.slogan} onChange={(e) => saveConfig({...config, slogan: e.target.value})} className="w-full bg-black/20 border border-white/10 rounded-xl p-2 text-xs text-white"/>
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-xs text-gray-500">לוגו (URL)</label>
+                                                        <input type="text" value={config.logo} onChange={(e) => saveConfig({...config, logo: e.target.value})} className="w-full bg-black/20 border border-white/10 rounded-xl p-2 text-xs text-white"/>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {sectionId === 'backup_reset' && (
+                                                <div className="space-y-2">
+                                                    <button onClick={() => {
+                                                        const blob = new Blob([JSON.stringify({db, config}, null, 2)], {type : 'application/json'});
+                                                        const url = URL.createObjectURL(blob);
+                                                        const a = document.createElement('a');
+                                                        a.href = url;
+                                                        a.download = `backup_${new Date().toLocaleDateString()}.json`;
+                                                        a.click();
+                                                    }} className="w-full py-2 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-xl text-xs font-bold">
+                                                        הורד גיבוי מקומי (JSON)
+                                                    </button>
+                                                    
+                                                    {!showResetConfirm ? (
+                                                        <button onClick={() => setShowResetConfirm(true)} className="w-full py-2 bg-red-500/10 text-red-500 border border-red-500/20 rounded-xl text-xs font-bold">
+                                                            איפוס תקופה מלא
+                                                        </button>
+                                                    ) : (
+                                                        <div className="bg-red-500/10 p-3 rounded-xl border border-red-500/30">
+                                                            <p className="text-red-500 text-xs font-bold mb-2 text-center">בטוח? הפעולה תמחק את כל הנקודות!</p>
+                                                            <div className="flex gap-2">
+                                                                <button onClick={handleFullReset} className="flex-1 bg-red-600 text-white py-2 rounded-lg text-xs font-bold">כן, אפס הכל</button>
+                                                                <button onClick={() => setShowResetConfirm(false)} className="flex-1 bg-white/10 text-white py-2 rounded-lg text-xs font-bold">ביטול</button>
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             )}
 
@@ -1215,58 +1347,15 @@ function createGeneratedQuiz() {
                 <StoreView 
                     students={Object.values(db) as Student[]}
                     config={config}
+                    userRole={userRole}
+                    loggedInStudentName={loggedInStudentName}
                     cart={cart}
                     setCart={setCart}
-                    selectedStudentId={userRole === 'student' ? loggedInStudentName : storeSelectedStudentId}
-                    setSelectedStudentId={userRole === 'teacher' ? setStoreSelectedStudentId : () => {}}
-                    onCheckout={() => {
-                        const sId = userRole === 'student' ? loggedInStudentName : storeSelectedStudentId;
-                        if (!sId || !db[sId]) return;
-                        
-                        const student = db[sId];
-                        const totalCost = cart.reduce((sum, item) => sum + item.price, 0);
-                        
-                        if (student.total < totalCost) {
-                            alert("אין מספיק נקודות!");
-                            return false;
-                        }
-
-                        // Process transaction
-                        const newTotal = student.total - totalCost;
-                        const newPurchases = [
-                            ...(student.purchases || []),
-                            ...cart.map(item => ({
-                                id: Date.now().toString() + Math.random(),
-                                itemId: item.id,
-                                itemName: item.name,
-                                cost: item.price,
-                                date: new Date().toLocaleDateString('he-IL'),
-                                timestamp: Date.now()
-                            }))
-                        ];
-
-                        // Log transaction in history too
-                        const newLog = {
-                            sub: "חנות",
-                            teach: "מערכת",
-                            k: `רכישת ${cart.length} פריטים`,
-                            c: 1,
-                            s: -totalCost,
-                            d: new Date().toLocaleDateString('he-IL')
-                        };
-
-                        saveDb({ ...db, [sId]: { ...student, total: newTotal, purchases: newPurchases, logs: [...student.logs, newLog] } });
-                        setCart([]);
-                        
-                        // Update stock
-                        const newStoreItems = config.storeItems.map(item => {
-                            const inCart = cart.filter(c => c.id === item.id).length;
-                            return inCart > 0 ? { ...item, stock: Math.max(0, item.stock - inCart) } : item;
-                        });
-                        saveConfig({ ...config, storeItems: newStoreItems });
-                        
-                        return true;
-                    }}
+                    onUpdateConfig={saveConfig}
+                    onUpdateStudent={(updatedStudent) => saveDb({ ...db, [updatedStudent.name]: updatedStudent })}
+                    onCheckout={() => true} // Legacy prop, no longer critical in new logic but kept for safety
+                    selectedStudentId={null} // Legacy
+                    setSelectedStudentId={() => {}} // Legacy
                 />
              )}
          </div>
