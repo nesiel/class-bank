@@ -1,7 +1,8 @@
 
 import React, { useState } from 'react';
 import { Student, StoreItem, AppConfig, PurchaseRequest, UserRole } from '../types';
-import { ShoppingBag, Coins, ChevronLeft, Check, Lock, Store, Plus, ShoppingCart, Trash2, X, Receipt, Send, Mail, Phone, Clock, Box, Edit2, AlertCircle, RefreshCw } from 'lucide-react';
+import { ShoppingBag, Coins, ChevronLeft, Check, Lock, Store, Plus, ShoppingCart, Trash2, X, Receipt, Send, Mail, Phone, Clock, Box, Edit2, AlertCircle, RefreshCw, Image as ImageIcon } from 'lucide-react';
+import { fileToBase64 } from '../utils';
 
 interface StoreViewProps {
   students: Student[];
@@ -13,6 +14,9 @@ interface StoreViewProps {
   // Legacy/Helper props
   cart: StoreItem[];
   setCart: (items: StoreItem[]) => void;
+  onCheckout: () => boolean; // Added based on App.tsx usage
+  selectedStudentId: string | null; // Added based on App.tsx usage
+  setSelectedStudentId: (id: string | null) => void; // Added based on App.tsx usage
 }
 
 export const StoreView: React.FC<StoreViewProps> = ({ 
@@ -122,6 +126,20 @@ export const StoreView: React.FC<StoreViewProps> = ({
               storeItems: config.storeItems.filter(i => i.id !== id) 
           });
       }
+  };
+
+  const handleStoreItemImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, itemId: string) => {
+    if (e.target.files?.[0]) {
+      try {
+        const base64 = await fileToBase64(e.target.files[0]);
+        const updatedItems = config.storeItems.map(item => 
+            item.id === itemId ? { ...item, image: base64 } : item
+        );
+        onUpdateConfig({ ...config, storeItems: updatedItems });
+      } catch (err) {
+        alert("שגיאה בהעלאת התמונה");
+      }
+    }
   };
 
   // --- STUDENT LOGIC ---
@@ -246,8 +264,12 @@ export const StoreView: React.FC<StoreViewProps> = ({
                           <div className="grid grid-cols-1 gap-3">
                               {config.storeItems.map(item => (
                                   <div key={item.id} className="bg-white/5 p-3 rounded-xl flex items-center gap-3 border border-white/5">
-                                      <div className="w-12 h-12 bg-black/30 rounded-lg flex items-center justify-center text-2xl">
-                                          {item.image ? <img src={item.image} className="w-full h-full object-cover rounded-lg"/> : item.emoji}
+                                      <div className="w-12 h-12 bg-black/30 rounded-lg flex items-center justify-center text-2xl relative overflow-hidden group">
+                                          {item.image ? <img src={item.image} className="w-full h-full object-contain p-1"/> : item.emoji}
+                                          <label className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 cursor-pointer transition">
+                                              <ImageIcon size={14} className="text-white"/>
+                                              <input type="file" className="hidden" accept="image/*" onChange={(e) => handleStoreItemImageUpload(e, item.id)}/>
+                                          </label>
                                       </div>
                                       
                                       <div className="flex-1 grid grid-cols-2 gap-2">
@@ -359,9 +381,9 @@ export const StoreView: React.FC<StoreViewProps> = ({
               className={`group relative bg-card rounded-xl border overflow-hidden flex flex-col transition-all duration-300 ${!isOutOfStock ? 'border-border hover:border-accent/50 shadow-sm' : 'border-white/5 opacity-60 grayscale'}`}
             >
                {/* Image Area */}
-               <div className="aspect-square w-full bg-black/20 flex items-center justify-center overflow-hidden relative">
+               <div className="aspect-square w-full bg-black/20 flex items-center justify-center overflow-hidden relative p-4">
                    {item.image ? (
-                       <img src={item.image} alt={item.name} className="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-500" />
+                       <img src={item.image} alt={item.name} className="w-full h-full object-contain transform group-hover:scale-110 transition-transform duration-500 drop-shadow-md" />
                    ) : (
                        <span className="text-4xl drop-shadow-md transform group-hover:scale-110 transition-transform">{item.emoji}</span>
                    )}

@@ -6,12 +6,13 @@ import { Podium } from './components/Podium';
 import { StudentDetails } from './components/StudentDetails';
 import { SeatingChart } from './components/SeatingChart';
 import { StoreView } from './components/StoreView';
+import { ChallengesView } from './components/ChallengesView'; // Import new component
 import { BatchCommenter } from './components/BatchCommenter';
 import { LoginScreen } from './components/LoginScreen';
 import { LearningCenter } from './components/LearningCenter';
 import { GoogleGenAI } from "@google/genai";
 import { 
-  Home, ShieldCheck, ChevronUp, ChevronDown, Settings, Trash2, Trophy, FileSpreadsheet, Coins, Users, Phone, Download, UserPlus, LayoutGrid, Book, X, PlusCircle, ArrowUp, ArrowDown, GripVertical, MessageCircle, Undo, Scroll, Star, AlertCircle, Palette, Store, Image as ImageIcon, ShoppingBag, Plus, Package, Wand2, Loader2, Save, GraduationCap, LogOut, MinusCircle, KeyRound, Lock, Target, Cloud, Upload, RefreshCw, CheckSquare, Square, Check, BookOpen, Link as LinkIcon, FileText, HardDrive, FileQuestion, Copy, ExternalLink, Crown, Search, Activity, Eye, EyeOff, Power, BrainCircuit, FileType
+  Home, ShieldCheck, ChevronUp, ChevronDown, Settings, Trash2, Trophy, FileSpreadsheet, Coins, Users, Phone, Download, UserPlus, LayoutGrid, Book, X, PlusCircle, ArrowUp, ArrowDown, GripVertical, MessageCircle, Undo, Scroll, Star, AlertCircle, Palette, Store, Image as ImageIcon, ShoppingBag, Plus, Package, Wand2, Loader2, Save, GraduationCap, LogOut, MinusCircle, KeyRound, Lock, Target, Cloud, Upload, RefreshCw, CheckSquare, Square, Check, BookOpen, Link as LinkIcon, FileText, HardDrive, FileQuestion, Copy, ExternalLink, Crown, Search, Activity, Eye, EyeOff, Power, BrainCircuit, FileType, Zap, ChevronRight
 } from 'lucide-react';
 
 // Define the available admin sections
@@ -19,7 +20,6 @@ const ADMIN_SECTIONS = [
   { id: 'cloud_sync', label: 'סנכרון לענן (Google Sheets)', icon: Cloud, color: 'text-sky-500', bg: 'bg-sky-500/10' },
   { id: 'import_files', label: 'ייבוא נתונים (אקסל)', icon: FileSpreadsheet, color: 'text-green-500', bg: 'bg-green-500/10' },
   { id: 'learning_manage', label: 'ניהול מרכז למידה ו-AI', icon: BookOpen, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
-  { id: 'challenges_manage', label: 'ניהול אתגרים', icon: Target, color: 'text-orange-500', bg: 'bg-orange-500/10' },
   { id: 'store_manage', label: 'ניהול חנות ומלאי', icon: Store, color: 'text-accent', bg: 'bg-accent/10' },
   { id: 'score_settings', label: 'הגדרות ניקוד', icon: Settings, color: 'text-blue-400', bg: 'bg-blue-500/10' },
   { id: 'rules_manage', label: 'עריכת תקנון', icon: Book, color: 'text-purple-400', bg: 'bg-purple-500/10' },
@@ -36,7 +36,7 @@ export default function App() {
   const [userRole, setUserRole] = useState<UserRole>('guest');
   const [loggedInStudentName, setLoggedInStudentName] = useState<string | null>(null);
 
-  const [currentView, setCurrentView] = useState<'home' | 'admin' | 'contacts' | 'seating' | 'store' | 'learning'>('home');
+  const [currentView, setCurrentView] = useState<'home' | 'admin' | 'contacts' | 'seating' | 'store' | 'learning' | 'challenges'>('home');
   const [showAll, setShowAll] = useState(false);
   const [showAllTefillah, setShowAllTefillah] = useState(false);
   const [isTefillahOpen, setIsTefillahOpen] = useState(false); 
@@ -77,7 +77,6 @@ export default function App() {
     store_manage: true,
     score_settings: true,
     rules_manage: true,
-    challenges_manage: true,
     learning_manage: true,
   });
   const [generatingItemId, setGeneratingItemId] = useState<string | null>(null);
@@ -94,7 +93,6 @@ export default function App() {
     'cloud_sync',
     'import_files',
     'learning_manage',
-    'challenges_manage',
     'store_manage', 
     'score_settings', 
     'rules_manage',
@@ -148,7 +146,6 @@ export default function App() {
                 try {
                     const parsedOrder = JSON.parse(sOrder);
                     if (!parsedOrder.includes('learning_manage')) parsedOrder.splice(2, 0, 'learning_manage');
-                    if (!parsedOrder.includes('challenges_manage')) parsedOrder.splice(3, 0, 'challenges_manage');
                     if (!parsedOrder.includes('cloud_sync')) parsedOrder.unshift('cloud_sync');
                     setAdminOrder(parsedOrder);
                 } catch(e) { console.error(e); }
@@ -223,6 +220,7 @@ export default function App() {
               logs: [],
               purchases: [],
               requests: [], // Reset requests
+              challengeRequests: [],
               lastNachatDate: undefined,
               semesterScore: undefined,
               semesterLogs: undefined,
@@ -463,7 +461,7 @@ export default function App() {
   };
   
   const handleAddChallenge = () => {
-      const newChallenge: Challenge = { id: Date.now().toString(), title: "", reward: 50 };
+      const newChallenge: Challenge = { id: Date.now().toString(), title: "", reward: 50, approved: true };
       saveConfig({ ...config, challenges: [...(config.challenges || []), newChallenge] });
   };
 
@@ -520,7 +518,9 @@ export default function App() {
       else if (type === 'review') setNewResource(prev => ({...prev, type: 'form', title: 'חזרה למבחן', url: ''}));
   };
 
-  // --- AI Logic (Quiz & Study Guide) ---
+  const handleGenerateQuizScript = async () => {
+      // ... (Implementation already in previous step)
+  };
 
   const handleGenerateQuiz = async () => {
       if (!aiSourceText.trim()) { alert("נא להדביק חומר לימוד"); return; }
@@ -528,27 +528,34 @@ export default function App() {
       try {
           const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
           const prompt = `
-            Analyze the following Hebrew text and create a quiz with 5 multiple choice questions.
-            Return ONLY a valid JSON array of objects.
-            Structure: [{ "q": "Question", "opts": ["Opt1", "Opt2", "Opt3", "Opt4"], "a": 0, "p": 20 }]
+            Analyze the following Hebrew text and create a quiz.
+            Return ONLY a valid JSON object with the following structure:
+            {
+              "title": "A short, descriptive title for the quiz based on the text (Hebrew)",
+              "questions": [
+                { "q": "Question", "opts": ["Opt1", "Opt2", "Opt3", "Opt4"], "a": 0, "p": 20 }
+              ]
+            }
             index "a" is the correct answer (0-3).
             
             Text: ${aiSourceText}
           `;
           const response = await ai.models.generateContent({ model: "gemini-3-flash-preview", contents: prompt });
           
-          let jsonStr = response.text || "[]";
+          let jsonStr = response.text || "{}";
           jsonStr = jsonStr.replace(/```json/g, '').replace(/```/g, '').trim();
           
-          const questions = JSON.parse(jsonStr);
+          const data = JSON.parse(jsonStr);
           const scriptCode = `
 function createGeneratedQuiz() {
-  var form = FormApp.create('בוחן חדש (נוצר ע"י AI)');
+  // Config
+  var data = ${JSON.stringify(data, null, 2)};
+  
+  var form = FormApp.create(data.title);
   form.setIsQuiz(true);
   form.addTextItem().setTitle('שם התלמיד').setRequired(true);
-  var questions = ${JSON.stringify(questions, null, 2)};
   
-  questions.forEach(function(q) {
+  data.questions.forEach(function(q) {
     var item = form.addMultipleChoiceItem();
     var choices = q.opts.map(function(opt, index) { 
       return item.createChoice(opt, index === q.a); 
@@ -574,21 +581,69 @@ function createGeneratedQuiz() {
       try {
           const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
           const prompt = `
-            Act as a teacher. Create a study guide summary based on the following text in Hebrew.
-            
-            Structure:
-            1. Title: "דף חזרה למבחן"
-            2. "סיכום קצר": 3-4 sentences summarizing the core topic.
-            3. "מושגים חשובים": A list of key terms and their short definitions.
-            4. "שאלות חזרה": 3-4 open-ended review questions for the student to practice.
-            
-            Keep it clean, formatted, and easy to read.
+            Analyze the following Hebrew text and extract content for a study guide (Google Doc).
+            Return ONLY a valid JSON object with the following structure:
+            {
+              "title": "Title of the study guide (e.g., 'דף חזרה למבחן')",
+              "summary": "A concise summary paragraph (3-4 sentences)",
+              "terms": [ {"term": "Term Name", "def": "Short definition"} ],
+              "questions": [ "Review question 1", "Review question 2" ]
+            }
             
             Text: ${aiSourceText}
           `;
           const response = await ai.models.generateContent({ model: "gemini-3-flash-preview", contents: prompt });
           
-          setAiResult({ type: 'text', content: response.text || "שגיאה ביצירת התוכן." });
+          let jsonStr = response.text || "{}";
+          jsonStr = jsonStr.replace(/```json/g, '').replace(/```/g, '').trim();
+          
+          const data = JSON.parse(jsonStr);
+          
+          const scriptCode = `
+function createStudyGuideDoc() {
+  var data = ${JSON.stringify(data, null, 2)};
+  
+  var doc = DocumentApp.create(data.title);
+  var body = doc.getBody();
+  
+  // Title
+  var titleStyle = {};
+  titleStyle[DocumentApp.Attribute.FONT_SIZE] = 18;
+  titleStyle[DocumentApp.Attribute.BOLD] = true;
+  titleStyle[DocumentApp.Attribute.FOREGROUND_COLOR] = '#000000';
+  
+  var par1 = body.appendParagraph(data.title);
+  par1.setHeading(DocumentApp.ParagraphHeading.HEADING1);
+  par1.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+  
+  // Summary
+  body.appendParagraph("סיכום הנושא");
+  body.appendParagraph(data.summary).setHeading(DocumentApp.ParagraphHeading.NORMAL);
+  body.appendParagraph(""); // Spacer
+  
+  // Terms
+  if (data.terms && data.terms.length > 0) {
+    body.appendParagraph("מושגים חשובים").setHeading(DocumentApp.ParagraphHeading.HEADING2);
+    for (var i = 0; i < data.terms.length; i++) {
+      var t = data.terms[i];
+      var item = body.appendListItem(t.term + ": " + t.def);
+      item.setGlyphType(DocumentApp.GlyphType.BULLET);
+    }
+  }
+  
+  // Questions
+  if (data.questions && data.questions.length > 0) {
+    body.appendParagraph("שאלות חזרה").setHeading(DocumentApp.ParagraphHeading.HEADING2);
+    for (var j = 0; j < data.questions.length; j++) {
+      body.appendParagraph((j+1) + ". " + data.questions[j]);
+      body.appendParagraph(""); // Space for answer
+    }
+  }
+  
+  doc.saveAndClose();
+  Logger.log('Doc URL: ' + doc.getUrl());
+}`;
+          setAiResult({ type: 'script', content: scriptCode });
       } catch (e) {
           console.error(e);
           alert("שגיאה ביצירת הסיכום.");
@@ -649,6 +704,10 @@ function createGeneratedQuiz() {
 
   // --- Render Logic ---
   
+  if (currentView === 'learning') {
+      return <LearningCenter config={config} onClose={() => { setCurrentView(userRole === 'guest' ? 'home' : 'home'); if(userRole === 'guest') handleLogout(); }} />;
+  }
+
   if (userRole === 'guest') {
     return <LoginScreen 
         students={Object.values(db) as Student[]} 
@@ -658,10 +717,6 @@ function createGeneratedQuiz() {
         logo={config.logo} 
         isSystemLocked={config.isSystemLocked}
     />;
-  }
-  
-  if (currentView === 'learning') {
-      return <LearningCenter config={config} onClose={() => { setCurrentView(userRole === 'guest' ? 'home' : 'home'); if(userRole === 'guest') handleLogout(); }} />;
   }
   
   const getPodiumStudents = () => {
@@ -737,6 +792,16 @@ function createGeneratedQuiz() {
          {/* Top Bar */}
          <div className="bg-card p-4 flex justify-between items-center shadow-lg border-b border-accent/20 z-20">
              <div className="flex items-center gap-3">
+                {/* Back Button */}
+                {currentView !== 'home' && (
+                    <button 
+                        onClick={() => setCurrentView('home')} 
+                        className="p-2 -mr-2 text-gray-400 hover:text-white transition"
+                    >
+                        <ChevronRight size={28} />
+                    </button>
+                )}
+                
                 {config.logo && <img src={config.logo} className="w-10 h-10 rounded-full border-2 border-accent" />}
                 <div>
                    <h1 className="text-xl font-black tracking-tight text-white">{config.slogan}</h1>
@@ -754,6 +819,7 @@ function createGeneratedQuiz() {
                    
                    <button onClick={() => setCurrentView('learning')} className="p-2 bg-emerald-500/10 text-emerald-500 rounded-full hover:bg-emerald-500/20"><BookOpen size={20}/></button>
                    <button onClick={() => setShowRules(true)} className="p-2 bg-purple-500/10 text-purple-400 rounded-full hover:bg-purple-500/20"><Book size={20}/></button>
+                   <button onClick={() => setCurrentView(currentView === 'challenges' ? 'home' : 'challenges')} className={`p-2 rounded-full transition ${currentView === 'challenges' ? 'bg-orange-500 text-white' : 'bg-orange-500/10 text-orange-500 hover:bg-orange-500/20'}`}><Target size={20}/></button>
                    <button onClick={() => setCurrentView(currentView === 'admin' ? 'home' : 'admin')} className={`p-2 rounded-full transition ${currentView === 'admin' ? 'bg-accent text-accent-fg' : 'bg-white/10 text-gray-300'}`}>
                       {currentView === 'admin' ? <Home size={20}/> : <Settings size={20}/>}
                    </button>
@@ -771,118 +837,149 @@ function createGeneratedQuiz() {
          {/* Content Area */}
          <div className="flex-1 overflow-hidden relative">
              
-             {/* HOME VIEW (Podium & Lists) */}
+             {/* HOME VIEW (Podium & Lists OR Student Dashboard) */}
              {currentView === 'home' && (
                  <div className="h-full overflow-y-auto p-4 pb-24">
                      
-                     {/* Podium Toggle */}
-                     <div className="flex justify-center gap-2 mb-4">
-                        <button 
-                            onClick={() => setPodiumMode('regular')}
-                            className={`px-4 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-2 ${podiumMode === 'regular' ? 'bg-accent text-accent-fg shadow-lg scale-105' : 'bg-white/10 text-gray-400 hover:bg-white/20'}`}
-                        >
-                            <Coins size={12} /> נקודות זכות
-                        </button>
-                        <button 
-                            onClick={() => setPodiumMode('grades')}
-                            className={`px-4 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-2 ${podiumMode === 'grades' ? 'bg-blue-500 text-white shadow-lg scale-105' : 'bg-white/10 text-gray-400 hover:bg-white/20'}`}
-                        >
-                            <GraduationCap size={12} /> מצטייני לימודים
-                        </button>
-                     </div>
-
-                     <Podium 
-                        students={getPodiumStudents()} 
-                        onRemoveStudent={(name) => {
-                             if(window.confirm(`להסיר את ${name} מהפודיום? (הניקוד יישמר)`)) {
-                                 const s = db[name];
-                                 if(s) saveDb({...db, [name]: {...s, isHiddenFromPodium: true}});
-                             }
-                        }}
-                        onStudentClick={handleStudentClick}
-                        scoreSuffix={podiumMode === 'grades' ? '' : '₪'} 
-                     />
-                     
-                     {/* Student List Grid (If not student view) */}
+                     {/* Teacher View: Podium & Class List */}
                      {userRole === 'teacher' && (
-                         <div className="mt-8">
-                             <div className="flex justify-between items-center mb-4 px-2">
-                                 <h3 className="font-bold text-gray-400 flex items-center gap-2"><Users size={16}/> כל התלמידים</h3>
-                                 <div className="flex items-center gap-2">
-                                     <button 
-                                        onClick={() => setIsStudentListExpanded(!isStudentListExpanded)}
-                                        className={`p-2 rounded-full hover:bg-white/10 text-gray-400 transition ${isStudentListExpanded ? 'bg-white/10 text-white' : 'bg-white/5'}`}
-                                     >
-                                         {isStudentListExpanded ? <EyeOff size={16}/> : <Eye size={16}/>}
-                                     </button>
-                                     <div className="flex items-center gap-2 bg-black/20 rounded-lg p-1">
-                                         <Search size={14} className="text-gray-500 ml-1"/>
-                                         <input 
-                                            className="bg-transparent border-none outline-none text-xs text-white w-24" 
-                                            placeholder="חיפוש..." 
-                                            value={searchQuery}
-                                            onChange={(e) => setSearchQuery(e.target.value)}
-                                         />
-                                     </div>
-                                 </div>
-                             </div>
-                             
-                             {/* Collapsible List */}
-                             {isStudentListExpanded && (
-                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 animate-in fade-in slide-in-from-top-4">
-                                    {(Object.values(db) as Student[])
-                                        .filter(s => s.name.includes(searchQuery))
-                                        .sort((a,b) => a.name.localeCompare(b.name))
-                                        .map(s => (
+                         <>
+                            <div className="flex justify-center gap-2 mb-4">
+                                <button 
+                                    onClick={() => setPodiumMode('regular')}
+                                    className={`px-4 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-2 ${podiumMode === 'regular' ? 'bg-accent text-accent-fg shadow-lg scale-105' : 'bg-white/10 text-gray-400 hover:bg-white/20'}`}
+                                >
+                                    <Coins size={12} /> נקודות זכות
+                                </button>
+                                <button 
+                                    onClick={() => setPodiumMode('grades')}
+                                    className={`px-4 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-2 ${podiumMode === 'grades' ? 'bg-blue-500 text-white shadow-lg scale-105' : 'bg-white/10 text-gray-400 hover:bg-white/20'}`}
+                                >
+                                    <GraduationCap size={12} /> מצטייני לימודים
+                                </button>
+                            </div>
+
+                            <Podium 
+                                students={getPodiumStudents()} 
+                                onRemoveStudent={(name) => {
+                                    if(window.confirm(`להסיר את ${name} מהפודיום? (הניקוד יישמר)`)) {
+                                        const s = db[name];
+                                        if(s) saveDb({...db, [name]: {...s, isHiddenFromPodium: true}});
+                                    }
+                                }}
+                                onStudentClick={handleStudentClick}
+                                scoreSuffix={podiumMode === 'grades' ? '' : '₪'} 
+                            />
+                            
+                            <div className="mt-8">
+                                <div className="flex justify-between items-center mb-4 px-2">
+                                    <h3 className="font-bold text-gray-400 flex items-center gap-2"><Users size={16}/> כל התלמידים</h3>
+                                    <div className="flex items-center gap-2">
                                         <button 
-                                            key={s.name}
-                                            onClick={() => handleStudentClick(s)}
-                                            className="bg-card hover:bg-white/5 p-3 rounded-xl border border-border flex flex-col items-center gap-2 transition active:scale-95 text-center group"
+                                            onClick={() => setIsStudentListExpanded(!isStudentListExpanded)}
+                                            className={`p-2 rounded-full hover:bg-white/10 text-gray-400 transition ${isStudentListExpanded ? 'bg-white/10 text-white' : 'bg-white/5'}`}
                                         >
-                                            <span className="font-bold text-sm text-txt group-hover:text-accent truncate w-full">{s.name}</span>
-                                            <span className={`text-xs font-black ${s.total < 0 ? 'text-red-500' : 'text-accent'}`}>{s.total}₪</span>
+                                            {isStudentListExpanded ? <EyeOff size={16}/> : <Eye size={16}/>}
                                         </button>
-                                    ))}
+                                        <div className="flex items-center gap-2 bg-black/20 rounded-lg p-1">
+                                            <Search size={14} className="text-gray-500 ml-1"/>
+                                            <input 
+                                                className="bg-transparent border-none outline-none text-xs text-white w-24" 
+                                                placeholder="חיפוש..." 
+                                                value={searchQuery}
+                                                onChange={(e) => setSearchQuery(e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
                                 </div>
-                             )}
-                             {!isStudentListExpanded && (
-                                 <div className="text-center py-4 bg-white/5 rounded-xl border border-dashed border-white/10">
-                                     <p className="text-xs text-gray-500 italic">רשימת התלמידים מוסתרת. לחץ על העין כדי להציג.</p>
-                                 </div>
-                             )}
-                         </div>
+                                
+                                {isStudentListExpanded && (
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 animate-in fade-in slide-in-from-top-4">
+                                        {(Object.values(db) as Student[])
+                                            .filter(s => s.name.includes(searchQuery))
+                                            .sort((a,b) => a.name.localeCompare(b.name))
+                                            .map(s => (
+                                            <button 
+                                                key={s.name}
+                                                onClick={() => handleStudentClick(s)}
+                                                className="bg-card hover:bg-white/5 p-3 rounded-xl border border-border flex flex-col items-center gap-2 transition active:scale-95 text-center group"
+                                            >
+                                                <span className="font-bold text-sm text-txt group-hover:text-accent truncate w-full">{s.name}</span>
+                                                <span className={`text-xs font-black ${s.total < 0 ? 'text-red-500' : 'text-accent'}`}>{s.total}₪</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                                {!isStudentListExpanded && (
+                                    <div className="text-center py-4 bg-white/5 rounded-xl border border-dashed border-white/10">
+                                        <p className="text-xs text-gray-500 italic">רשימת התלמידים מוסתרת. לחץ על העין כדי להציג.</p>
+                                    </div>
+                                )}
+                            </div>
+                         </>
                      )}
 
-                     {/* Student View Specifics */}
+                     {/* Student View: Personal Dashboard ONLY */}
                      {userRole === 'student' && loggedInStudentName && db[loggedInStudentName] && (
-                        <div className="mt-6 flex flex-col items-center">
-                            <div className="bg-card p-6 rounded-3xl border border-accent/20 shadow-2xl w-full max-w-sm text-center transform hover:scale-[1.02] transition duration-300">
-                                <h2 className="text-2xl font-black text-white mb-2">{db[loggedInStudentName].name}</h2>
-                                <div className="text-5xl font-black text-accent mb-4 drop-shadow-md">{db[loggedInStudentName].total}₪</div>
-                                <div className="grid grid-cols-2 gap-3">
-                                    <button 
-                                        onClick={() => setCurrentView('store')}
-                                        className="bg-accent text-accent-fg py-3 rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 active:scale-95 transition"
-                                    >
-                                        <Store size={18} /> לחנות
-                                    </button>
-                                    <button 
-                                        onClick={() => handleStudentClick(db[loggedInStudentName])}
-                                        className="bg-white/10 text-white py-3 rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 active:scale-95 transition hover:bg-white/20"
-                                    >
-                                        <Activity size={18} /> ציונים ופירוט
-                                    </button>
-                                </div>
+                        <div className="mt-6 flex flex-col items-center gap-4">
+                            
+                            {/* Balance Card */}
+                            <div className="bg-card p-8 rounded-[2.5rem] border-2 border-accent/30 shadow-[0_0_40px_rgba(var(--c-accent),0.2)] w-full max-w-sm text-center relative overflow-hidden group">
+                                <div className="absolute inset-0 bg-gradient-to-br from-accent/10 to-transparent pointer-events-none"></div>
+                                <h2 className="text-3xl font-black text-white mb-2 relative z-10">{db[loggedInStudentName].name}</h2>
+                                <div className="text-6xl font-black text-accent mb-4 drop-shadow-[0_4px_4px_rgba(0,0,0,0.5)] relative z-10">{db[loggedInStudentName].total}₪</div>
+                                <p className="text-sm text-accent/70 uppercase tracking-widest font-bold">יתרה נוכחית</p>
+                            </div>
+
+                            {/* Actions Grid */}
+                            <div className="grid grid-cols-2 gap-3 w-full max-w-sm">
+                                <button 
+                                    onClick={() => setCurrentView('store')}
+                                    className="bg-gradient-to-br from-purple-600 to-purple-800 text-white p-4 rounded-2xl font-bold shadow-lg flex flex-col items-center justify-center gap-2 active:scale-95 transition"
+                                >
+                                    <Store size={28} />
+                                    <span>חנות</span>
+                                </button>
+                                
+                                <button 
+                                    onClick={() => setCurrentView('challenges')}
+                                    className="bg-gradient-to-br from-orange-500 to-red-600 text-white p-4 rounded-2xl font-bold shadow-lg flex flex-col items-center justify-center gap-2 active:scale-95 transition"
+                                >
+                                    <Target size={28} />
+                                    <span>אתגרים</span>
+                                </button>
+
+                                <button 
+                                    onClick={() => handleStudentClick(db[loggedInStudentName])}
+                                    className="bg-gradient-to-br from-blue-500 to-blue-700 text-white p-4 rounded-2xl font-bold shadow-lg flex flex-col items-center justify-center gap-2 active:scale-95 transition"
+                                >
+                                    <Activity size={28} />
+                                    <span>הציונים שלי</span>
+                                </button>
+
                                 <button 
                                     onClick={() => setShowChangePassword(true)}
-                                    className="mt-4 text-xs text-gray-500 hover:text-white flex items-center justify-center gap-1 w-full"
+                                    className="bg-white/10 text-gray-300 p-4 rounded-2xl font-bold shadow-lg flex flex-col items-center justify-center gap-2 active:scale-95 transition hover:bg-white/20"
                                 >
-                                    <KeyRound size={10} /> שינוי סיסמה
+                                    <KeyRound size={28} />
+                                    <span>סיסמה</span>
                                 </button>
                             </div>
                         </div>
                      )}
                  </div>
+             )}
+
+             {/* CHALLENGES VIEW */}
+             {currentView === 'challenges' && (
+                 <ChallengesView 
+                    config={config}
+                    students={Object.values(db) as Student[]}
+                    userRole={userRole}
+                    loggedInStudentName={loggedInStudentName}
+                    onUpdateConfig={saveConfig}
+                    onUpdateStudent={(updatedStudent) => saveDb({ ...db, [updatedStudent.name]: updatedStudent })}
+                 />
              )}
 
              {/* CONTACTS VIEW */}
@@ -1170,7 +1267,7 @@ function createGeneratedQuiz() {
                                                                 disabled={isGeneratingAi}
                                                                 className="flex-1 py-2 bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded-lg text-xs font-bold hover:bg-blue-600/30 flex justify-center items-center gap-2"
                                                             >
-                                                                {isGeneratingAi ? <Loader2 className="animate-spin" size={14}/> : <FileType size={14}/>} צור דף חזרה
+                                                                {isGeneratingAi ? <Loader2 className="animate-spin" size={14}/> : <FileType size={14}/>} צור דף חזרה (Docs)
                                                             </button>
                                                         </div>
 
@@ -1205,23 +1302,6 @@ function createGeneratedQuiz() {
                                             )}
 
                                             {/* ... Rest of Admin Sections ... */}
-                                            {sectionId === 'challenges_manage' && (
-                                                <div className="space-y-3">
-                                                    <button onClick={handleAddChallenge} className="w-full py-2 bg-orange-500/20 text-orange-500 border border-orange-500/30 rounded-xl text-xs font-bold flex items-center justify-center gap-2">
-                                                        <Plus size={14}/> הוסף אתגר חדש
-                                                    </button>
-                                                    <div className="space-y-2">
-                                                        {(config.challenges || []).map(c => (
-                                                            <div key={c.id} className="bg-white/5 p-2 rounded-xl flex gap-2 items-center">
-                                                                <input type="text" value={c.title} onChange={(e) => handleUpdateChallenge(c.id, 'title', e.target.value)} className="flex-1 bg-transparent border-b border-white/10 text-xs text-white" placeholder="תיאור האתגר"/>
-                                                                <input type="number" value={c.reward} onChange={(e) => handleUpdateChallenge(c.id, 'reward', parseInt(e.target.value))} className="w-12 bg-black/20 rounded p-1 text-xs text-orange-400 text-center"/>
-                                                                <button onClick={() => handleDeleteChallenge(c.id)} className="text-red-500/50 hover:text-red-500"><Trash2 size={12}/></button>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            )}
-                                            
                                             {sectionId === 'rules_manage' && (
                                                 <textarea 
                                                     className="w-full h-32 bg-black/20 border border-white/10 rounded-xl p-3 text-xs text-white leading-relaxed"

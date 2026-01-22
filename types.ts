@@ -25,6 +25,16 @@ export interface PurchaseRequest {
   status: RequestStatus;
 }
 
+export interface ChallengeRequest {
+  id: string;
+  challengeId: string;
+  challengeTitle: string;
+  reward: number;
+  date: string;
+  timestamp: number;
+  status: RequestStatus;
+}
+
 export interface Purchase {
   id: string;
   itemId: string;
@@ -38,6 +48,8 @@ export interface Challenge {
   id: string;
   title: string;
   reward: number;
+  approved: boolean; // New: If false, it's a suggestion waiting for teacher
+  suggestedBy?: string; // New: Name of student who suggested it
 }
 
 export interface Student {
@@ -45,7 +57,8 @@ export interface Student {
   total: number;
   logs: LogEntry[];
   purchases?: Purchase[];
-  requests?: PurchaseRequest[]; // New: Pending requests
+  requests?: PurchaseRequest[]; 
+  challengeRequests?: ChallengeRequest[]; // New: Pending challenge completions
   lastNachatDate?: string;
   
   // Semester Data
@@ -173,11 +186,11 @@ export const DEFAULT_CONFIG: AppConfig = {
     { id: '5', name: 'כדור גומי', emoji: '🎾', price: 60, stock: 8 }
   ],
   challenges: [
-    { id: '1', title: 'שבוע תפילה בזמן', reward: 50 },
-    { id: '2', title: 'שבוע ללא איחורים', reward: 40 },
-    { id: '3', title: 'עזרה לחבר בלימודים', reward: 20 },
-    { id: '4', title: 'סיום מסכת משניות', reward: 100 },
-    { id: '5', title: 'שבוע תפילת מנחה', reward: 30 },
+    { id: '1', title: 'שבוע תפילה בזמן', reward: 50, approved: true },
+    { id: '2', title: 'שבוע ללא איחורים', reward: 40, approved: true },
+    { id: '3', title: 'עזרה לחבר בלימודים', reward: 20, approved: true },
+    { id: '4', title: 'סיום מסכת משניות', reward: 100, approved: true },
+    { id: '5', title: 'שבוע תפילת מנחה', reward: 30, approved: true },
   ],
   learningSubjects: ['משנה', 'גמרא', 'חומש', 'הלכה', 'כללי'],
   learningResources: [],
