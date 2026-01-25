@@ -457,15 +457,22 @@ export default function App() {
 
   const handleAddResource = () => {
       if (!newResource.title || !newResource.subject || !newResource.url) { alert("נא למלא את כל השדות"); return; }
-      const newItem: LearningResource = { id: Date.now().toString(), ...newResource, dateAdded: new Date().toLocaleDateString('he-IL') };
+      // FIX: Ensure unique ID to prevent deletion issues
+      const newItem: LearningResource = { 
+          id: Date.now().toString() + Math.random().toString(36).substr(2, 9), 
+          ...newResource, 
+          dateAdded: new Date().toLocaleDateString('he-IL') 
+      };
       saveConfig({ ...config, learningResources: [...(config.learningResources || []), newItem] });
       setNewResource({ title: "", subject: "", type: 'link', url: "" });
       alert("התווסף בהצלחה!");
   };
 
   const handleDeleteResource = (id: string) => {
-      if (!window.confirm("למחוק?")) return;
-      saveConfig({ ...config, learningResources: (config.learningResources || []).filter(r => r.id !== id) });
+      if (!window.confirm("בטוח שברצונך למחוק קובץ זה?")) return;
+      // FIX: Robust filtering
+      const updatedResources = (config.learningResources || []).filter(r => r.id !== id);
+      saveConfig({ ...config, learningResources: updatedResources });
   };
 
   const handleResourceFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -848,7 +855,7 @@ function createStudyGuideDoc() {
                                     }
                                 }}
                                 onStudentClick={handleStudentClick}
-                                scoreSuffix={podiumMode === 'grades' ? '' : '₪'} 
+                                scoreSuffix={['grades', 'tefillah'].includes(podiumMode) ? '' : '₪'} 
                             />
                          </>
                      )}
@@ -1168,7 +1175,16 @@ function createStudyGuideDoc() {
                                                                 <div className="truncate flex-1">
                                                                     <span className="text-xs text-emerald-400 font-bold">[{r.subject}]</span> <span className="text-xs text-gray-300">{r.title}</span>
                                                                 </div>
-                                                                <button onClick={() => handleDeleteResource(r.id)} className="text-red-500 hover:text-red-400 p-1"><Trash2 size={12}/></button>
+                                                                <button 
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleDeleteResource(r.id);
+                                                                    }} 
+                                                                    className="text-red-500 hover:text-red-400 p-2 bg-red-500/10 rounded-lg transition"
+                                                                    title="מחק קובץ"
+                                                                >
+                                                                    <Trash2 size={16}/>
+                                                                </button>
                                                             </div>
                                                         ))}
                                                     </div>
