@@ -12,7 +12,7 @@ import { LoginScreen } from './components/LoginScreen';
 import { LearningCenter } from './components/LearningCenter';
 import { GoogleGenAI } from "@google/genai";
 import { 
-  Home, ChevronUp, ChevronDown, Settings, Trash2, Trophy, FileSpreadsheet, Coins, Users, Phone, Download, LayoutGrid, Book, X, Scroll, AlertCircle, Palette, Store, Image as ImageIcon, Plus, Wand2, Loader2, GraduationCap, LogOut, KeyRound, Lock, Target, Cloud, Upload, Check, BookOpen, FileQuestion, Copy, FileType, Search, Activity, ChevronRight, Power, BrainCircuit
+  Home, ChevronUp, ChevronDown, Settings, Trash2, Trophy, FileSpreadsheet, Coins, Users, Phone, Download, LayoutGrid, Book, X, Scroll, AlertCircle, Palette, Store, Image as ImageIcon, Plus, Wand2, Loader2, GraduationCap, LogOut, KeyRound, Lock, Target, Cloud, Upload, Check, BookOpen, FileQuestion, Copy, FileType, Search, Activity, ChevronRight, Power, BrainCircuit, FileUp, Folder, RefreshCcw
 } from 'lucide-react';
 
 // Define the available admin sections
@@ -24,7 +24,7 @@ const ADMIN_SECTIONS = [
   { id: 'score_settings', label: 'הגדרות ניקוד', icon: Settings, color: 'text-blue-400', bg: 'bg-blue-500/10' },
   { id: 'rules_manage', label: 'עריכת תקנון', icon: Book, color: 'text-purple-400', bg: 'bg-purple-500/10' },
   { id: 'general_settings', label: 'הגדרות כלליות ואבטחה', icon: Phone, color: 'text-gray-400', bg: 'bg-gray-500/10' },
-  { id: 'backup_reset', label: 'גיבוי ואיפוס', icon: Download, color: 'text-red-400', bg: 'bg-red-500/10' },
+  { id: 'backup_reset', label: 'גיבוי ואיפוס תקופה', icon: Download, color: 'text-red-400', bg: 'bg-red-500/10' },
   { id: 'theme_settings', label: 'עיצוב', icon: Palette, color: 'text-pink-400', bg: 'bg-pink-500/10' },
 ];
 
@@ -50,7 +50,7 @@ export default function App() {
   // Cloud Sync State
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
-  const [includeImagesInSync, setIncludeImagesInSync] = useState(false);
+  const [includeImagesInSync, setIncludeImagesInSync] = useState(true); // Changed default to true
   const skipAutoSaveRef = useRef(false); // To prevent auto-save loop after loading
 
   // Student Password Change State
@@ -62,6 +62,7 @@ export default function App() {
   const [newResource, setNewResource] = useState<{title: string, subject: string, type: ResourceType, url: string}>({
       title: "", subject: "", type: 'link', url: ""
   });
+  const [isDragOver, setIsDragOver] = useState(false); // Drag state
   
   // AI Generator State (Quiz & Study Guide)
   const [aiSourceText, setAiSourceText] = useState("");
@@ -74,6 +75,16 @@ export default function App() {
     score_settings: true,
     rules_manage: true,
     learning_manage: true,
+  });
+
+  // Reset Options State
+  const [resetOptions, setResetOptions] = useState({
+      points: true,
+      logs: true,
+      purchases: true,
+      requests: true,
+      grades: false, // Default: Keep grades
+      scholastic: true
   });
 
   // Store Persistent State
@@ -116,6 +127,23 @@ export default function App() {
                     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
                         loadedConfig = Object.assign({}, DEFAULT_CONFIG, parsed);
                         
+                        // FIX: Ensure all resources have IDs for reliable deletion
+                        let modified = false;
+                        if (loadedConfig.learningResources && Array.isArray(loadedConfig.learningResources)) {
+                            loadedConfig.learningResources = loadedConfig.learningResources.map((r: any) => {
+                                if (!r.id) {
+                                    modified = true;
+                                    return { ...r, id: 'res_' + Math.random().toString(36).substr(2, 9) };
+                                }
+                                return r;
+                            });
+                        }
+                        
+                        // Persist IDs immediately if we patched them
+                        if (modified) {
+                            localStorage.setItem('bank_cfg', JSON.stringify(loadedConfig));
+                        }
+
                         // Ensure URL is preserved from default if missing in local but exists in default
                         if (DEFAULT_CONFIG.googleAppsScriptUrl && !loadedConfig.googleAppsScriptUrl) {
                             loadedConfig.googleAppsScriptUrl = DEFAULT_CONFIG.googleAppsScriptUrl;
@@ -201,22 +229,33 @@ export default function App() {
   };
   
   const handleFullReset = () => {
-      // Create a clean version of the DB: Keep students, reset scores/logs
+      // Create a clean version of the DB based on selected options
       const newDb: Database = {};
       Object.entries(db).forEach(([key, student]) => {
+          const s = student as Student;
           newDb[key] = {
-              ...(student as Student),
-              total: 0,
-              logs: [],
-              purchases: [],
-              requests: [], // Reset requests
-              challengeRequests: [],
-              lastNachatDate: undefined,
-              semesterScore: undefined,
-              semesterLogs: undefined,
-              grades: undefined,
-              academicReinforcement: undefined,
-              certificateComment: undefined
+              ...s,
+              // Conditional Resets based on checkboxes
+              total: resetOptions.points ? 0 : s.total,
+              logs: resetOptions.logs ? [] : s.logs,
+              purchases: resetOptions.purchases ? [] : s.purchases,
+              requests: resetOptions.requests ? [] : s.requests,
+              challengeRequests: resetOptions.requests ? [] : s.challengeRequests,
+              
+              // Reset timestamps usually goes with logs
+              lastNachatDate: resetOptions.logs ? undefined : s.lastNachatDate,
+              
+              // Archive data
+              semesterScore: resetOptions.points ? undefined : s.semesterScore,
+              semesterLogs: resetOptions.logs ? undefined : s.semesterLogs,
+              
+              // Grades - RESPECT THE OPTION
+              grades: resetOptions.grades ? undefined : s.grades,
+              
+              // Scholastic Comments
+              academicReinforcement: resetOptions.scholastic ? undefined : s.academicReinforcement,
+              certificateComment: resetOptions.scholastic ? undefined : s.certificateComment,
+              academicGoal: resetOptions.scholastic ? undefined : s.academicGoal,
           };
       });
 
@@ -226,11 +265,17 @@ export default function App() {
       // Set a flag to prevent immediate cloud reload on refresh overriding our reset
       localStorage.setItem('bank_skip_cloud_load', 'true');
       
-      alert("התקופה אופסה בהצלחה!\n\nנשמרו:\n✅ רשימת התלמידים (אלפון)\n✅ מרכז הלמידה והחנות\n✅ הגדרות וסיסמאות\n\nנמחקו:\n❌ ניקוד והיסטוריית פעולות");
+      let message = "התקופה אופסה בהצלחה!\n\n";
+      if (resetOptions.grades) message += "❌ הציונים נמחקו.\n";
+      else message += "✅ הציונים נשמרו.\n";
+      
+      message += "\nהעמוד ירענן כעת.";
+      
+      alert(message);
       
       setTimeout(() => {
           window.location.reload();
-      }, 200);
+      }, 500);
   };
 
   const saveDb = (newDb: Database) => {
@@ -441,6 +486,18 @@ export default function App() {
       }
     }
   };
+
+  // --- LOGO UPLOAD HANDLER ---
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files?.[0]) {
+      try {
+        const base64 = await fileToBase64(e.target.files[0]);
+        saveConfig({ ...config, logo: base64 });
+      } catch (err) {
+        alert("שגיאה בהעלאת התמונה");
+      }
+    }
+  };
   
   const handleAddSubject = () => {
       if (!newSubjectName.trim()) return;
@@ -457,7 +514,6 @@ export default function App() {
 
   const handleAddResource = () => {
       if (!newResource.title || !newResource.subject || !newResource.url) { alert("נא למלא את כל השדות"); return; }
-      // FIX: Ensure unique ID to prevent deletion issues
       const newItem: LearningResource = { 
           id: Date.now().toString() + Math.random().toString(36).substr(2, 9), 
           ...newResource, 
@@ -470,9 +526,16 @@ export default function App() {
 
   const handleDeleteResource = (id: string) => {
       if (!window.confirm("בטוח שברצונך למחוק קובץ זה?")) return;
-      // FIX: Robust filtering
-      const updatedResources = (config.learningResources || []).filter(r => r.id !== id);
-      saveConfig({ ...config, learningResources: updatedResources });
+      
+      setConfig(prev => {
+          const updatedResources = (prev.learningResources || []).filter(r => r.id !== id);
+          
+          // Persist immediately to avoid stale state issues
+          const newConfig = { ...prev, learningResources: updatedResources };
+          localStorage.setItem('bank_cfg', JSON.stringify(newConfig));
+          
+          return newConfig;
+      });
   };
 
   const handleResourceFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -481,6 +544,57 @@ export default function App() {
               const base64 = await fileToBase64(e.target.files[0]);
               setNewResource(prev => ({ ...prev, url: base64, type: 'file' }));
           } catch(err) { alert("שגיאה בקובץ"); }
+      }
+  };
+
+  // --- Drag and Drop Handlers ---
+  const handleDragOver = (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragOver(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragOver(false);
+
+      if (!newResource.subject) {
+          alert("נא לבחור תיקייה/נושא מהרשימה לפני גרירת קבצים!");
+          return;
+      }
+
+      const files: File[] = Array.from(e.dataTransfer.files);
+      if (files.length === 0) return;
+
+      const newResources: LearningResource[] = [];
+
+      for (const file of files) {
+          try {
+              const base64 = await fileToBase64(file);
+              const newItem: LearningResource = {
+                  id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+                  title: file.name,
+                  subject: newResource.subject,
+                  type: 'file',
+                  url: base64,
+                  dateAdded: new Date().toLocaleDateString('he-IL')
+              };
+              newResources.push(newItem);
+          } catch (err) {
+              console.error("Failed to process file", file.name, err);
+          }
+      }
+
+      if (newResources.length > 0) {
+          saveConfig({ 
+              ...config, 
+              learningResources: [...(config.learningResources || []), ...newResources] 
+          });
+          alert(`${newResources.length} קבצים הועלו בהצלחה לתיקיית ${newResource.subject}`);
       }
   };
 
@@ -1169,18 +1283,43 @@ function createStudyGuideDoc() {
                                                         <button onClick={handleAddResource} className="w-full bg-emerald-600 text-white py-2 rounded-lg text-xs font-bold mt-2">שמור במרכז הלמידה</button>
                                                     </div>
 
+                                                    {/* DRAG AND DROP ZONE */}
+                                                    <div 
+                                                        onDragOver={handleDragOver}
+                                                        onDragLeave={handleDragLeave}
+                                                        onDrop={handleDrop}
+                                                        className={`border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center transition-colors duration-200 mt-4 ${
+                                                            isDragOver 
+                                                                ? 'border-emerald-400 bg-emerald-500/10' 
+                                                                : 'border-white/10 bg-white/5 hover:bg-white/10'
+                                                        }`}
+                                                    >
+                                                        <div className={`p-4 rounded-full mb-2 ${isDragOver ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/10 text-gray-400'}`}>
+                                                            {isDragOver ? <FileUp size={32} /> : <Folder size={32} />}
+                                                        </div>
+                                                        <p className="text-sm font-bold text-white mb-1">
+                                                            {isDragOver ? 'שחרר קבצים כאן' : 'גרירת קבצים לתיקייה'}
+                                                        </p>
+                                                        <p className="text-xs text-gray-400 text-center">
+                                                            {newResource.subject 
+                                                                ? `העלאה לתיקייה: "${newResource.subject}"` 
+                                                                : 'יש לבחור תיקייה מהרשימה למעלה כדי להפעיל'}
+                                                        </p>
+                                                    </div>
+
                                                     <div className="max-h-40 overflow-y-auto space-y-1">
-                                                        {(config.learningResources || []).map(r => (
-                                                            <div key={r.id} className="flex justify-between items-center bg-white/5 p-2 rounded-lg">
+                                                        {(config.learningResources || []).map((r) => (
+                                                            <div key={r.id} className="flex justify-between items-center bg-white/5 p-2 rounded-lg relative group">
                                                                 <div className="truncate flex-1">
                                                                     <span className="text-xs text-emerald-400 font-bold">[{r.subject}]</span> <span className="text-xs text-gray-300">{r.title}</span>
                                                                 </div>
                                                                 <button 
+                                                                    type="button"
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
                                                                         handleDeleteResource(r.id);
                                                                     }} 
-                                                                    className="text-red-500 hover:text-red-400 p-2 bg-red-500/10 rounded-lg transition"
+                                                                    className="text-red-500 hover:text-red-400 p-2 bg-red-500/10 rounded-lg transition z-10 hover:bg-red-500/20 cursor-pointer flex-shrink-0 ml-2"
                                                                     title="מחק קובץ"
                                                                 >
                                                                     <Trash2 size={16}/>
@@ -1313,28 +1452,62 @@ function createStudyGuideDoc() {
                                             )}
 
                                             {sectionId === 'backup_reset' && (
-                                                <div className="space-y-2">
-                                                    <button onClick={() => {
-                                                        const blob = new Blob([JSON.stringify({db, config}, null, 2)], {type : 'application/json'});
-                                                        const url = URL.createObjectURL(blob);
-                                                        const a = document.createElement('a');
-                                                        a.href = url;
-                                                        a.download = `backup_${new Date().toLocaleDateString()}.json`;
-                                                        a.click();
-                                                    }} className="w-full py-2 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-xl text-xs font-bold">
-                                                        הורד גיבוי מקומי (JSON)
-                                                    </button>
+                                                <div className="space-y-4">
+                                                    <div className="bg-white/5 p-3 rounded-xl">
+                                                        <p className="text-xs text-gray-400 mb-2">גיבוי מקומי מלא (כולל תמונות בחנות)</p>
+                                                        <button onClick={() => {
+                                                            const blob = new Blob([JSON.stringify({db, config}, null, 2)], {type : 'application/json'});
+                                                            const url = URL.createObjectURL(blob);
+                                                            const a = document.createElement('a');
+                                                            a.href = url;
+                                                            a.download = `backup_${new Date().toLocaleDateString()}.json`;
+                                                            a.click();
+                                                        }} className="w-full py-2 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-xl text-xs font-bold flex items-center justify-center gap-2">
+                                                            <Download size={14}/> הורד קובץ גיבוי
+                                                        </button>
+                                                    </div>
                                                     
                                                     {!showResetConfirm ? (
-                                                        <button onClick={() => setShowResetConfirm(true)} className="w-full py-2 bg-red-500/10 text-red-500 border border-red-500/20 rounded-xl text-xs font-bold">
-                                                            איפוס תקופה מלא
+                                                        <button onClick={() => setShowResetConfirm(true)} className="w-full py-3 bg-red-500/10 text-red-500 border border-red-500/20 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-red-500/20">
+                                                            <RefreshCcw size={14}/> איפוס תקופה
                                                         </button>
                                                     ) : (
-                                                        <div className="bg-red-500/10 p-3 rounded-xl border border-red-500/30">
-                                                            <p className="text-red-500 text-xs font-bold mb-2 text-center">בטוח? הפעולה תמחק את כל הנקודות!</p>
+                                                        <div className="bg-red-500/10 p-4 rounded-xl border border-red-500/30 animate-in slide-in-from-top-2">
+                                                            <div className="flex justify-between items-center mb-3">
+                                                                <h4 className="text-red-500 font-bold text-sm">מה ברצונך למחוק?</h4>
+                                                                <button onClick={() => setShowResetConfirm(false)} className="text-gray-400 hover:text-white"><X size={14}/></button>
+                                                            </div>
+                                                            
+                                                            <div className="grid grid-cols-2 gap-2 mb-4">
+                                                                <label className="flex items-center gap-2 text-xs text-white p-2 bg-black/20 rounded-lg cursor-pointer">
+                                                                    <input type="checkbox" checked={resetOptions.points} onChange={e => setResetOptions({...resetOptions, points: e.target.checked})} className="rounded bg-black border-red-500/50 text-red-500 focus:ring-0"/>
+                                                                    ניקוד מצטבר
+                                                                </label>
+                                                                <label className="flex items-center gap-2 text-xs text-white p-2 bg-black/20 rounded-lg cursor-pointer">
+                                                                    <input type="checkbox" checked={resetOptions.logs} onChange={e => setResetOptions({...resetOptions, logs: e.target.checked})} className="rounded bg-black border-red-500/50 text-red-500 focus:ring-0"/>
+                                                                    היסטוריית פעולות
+                                                                </label>
+                                                                <label className="flex items-center gap-2 text-xs text-white p-2 bg-black/20 rounded-lg cursor-pointer">
+                                                                    <input type="checkbox" checked={resetOptions.purchases} onChange={e => setResetOptions({...resetOptions, purchases: e.target.checked})} className="rounded bg-black border-red-500/50 text-red-500 focus:ring-0"/>
+                                                                    רכישות בחנות
+                                                                </label>
+                                                                <label className="flex items-center gap-2 text-xs text-white p-2 bg-black/20 rounded-lg cursor-pointer">
+                                                                    <input type="checkbox" checked={resetOptions.requests} onChange={e => setResetOptions({...resetOptions, requests: e.target.checked})} className="rounded bg-black border-red-500/50 text-red-500 focus:ring-0"/>
+                                                                    בקשות ואתגרים
+                                                                </label>
+                                                                <label className="flex items-center gap-2 text-xs text-white p-2 bg-black/20 rounded-lg cursor-pointer">
+                                                                    <input type="checkbox" checked={resetOptions.scholastic} onChange={e => setResetOptions({...resetOptions, scholastic: e.target.checked})} className="rounded bg-black border-red-500/50 text-red-500 focus:ring-0"/>
+                                                                    הערות לתעודה
+                                                                </label>
+                                                                <label className="flex items-center gap-2 text-xs text-white p-2 bg-black/20 rounded-lg cursor-pointer border border-green-500/30">
+                                                                    <input type="checkbox" checked={resetOptions.grades} onChange={e => setResetOptions({...resetOptions, grades: e.target.checked})} className="rounded bg-black border-red-500/50 text-red-500 focus:ring-0"/>
+                                                                    <span className={resetOptions.grades ? "text-red-400 font-bold" : "text-gray-400"}>מחיקת ציונים</span>
+                                                                </label>
+                                                            </div>
+
                                                             <div className="flex gap-2">
-                                                                <button onClick={handleFullReset} className="flex-1 bg-red-600 text-white py-2 rounded-lg text-xs font-bold">כן, אפס הכל</button>
-                                                                <button onClick={() => setShowResetConfirm(false)} className="flex-1 bg-white/10 text-white py-2 rounded-lg text-xs font-bold">ביטול</button>
+                                                                <button onClick={handleFullReset} className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg text-xs font-bold shadow-lg">ביצוע איפוס</button>
+                                                                <button onClick={() => setShowResetConfirm(false)} className="px-4 bg-white/10 text-white py-2 rounded-lg text-xs font-bold">ביטול</button>
                                                             </div>
                                                         </div>
                                                     )}

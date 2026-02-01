@@ -1,7 +1,18 @@
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Student, AppConfig, Challenge } from '../types';
-import { X, Trash2, Calendar, MessageCircle, Phone, Heart, Users, GraduationCap, PlusCircle, Check, MinusCircle, Mail, Smartphone, Home, Trophy, Filter, RotateCcw, KeyRound, Target, Activity, FileSpreadsheet } from 'lucide-react';
+import { X, Trash2, Calendar, MessageCircle, Phone, Heart, Users, GraduationCap, PlusCircle, Check, Mail, Smartphone, Home, Trophy, Filter, RotateCcw, Target, Activity, FileSpreadsheet, PieChart, List, Percent, Hash, ChevronDown, ChevronUp } from 'lucide-react';
+
+interface ActionStats {
+  count: number;
+  score: number;
+}
+
+interface SubjectStats {
+  totalCount: number;
+  totalScore: number;
+  actions: Record<string, ActionStats>;
+}
 
 interface StudentDetailsProps {
   student: Student | null;
@@ -17,6 +28,10 @@ interface StudentDetailsProps {
 
 export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config, onClose, onDeleteLog, onAddLog, onMarkNachat, onUpdateStudent, isAuthenticated, filterKeyword }) => {
   const [activeTab, setActiveTab] = useState<'behavior' | 'grades'>('behavior');
+  const [viewMode, setViewMode] = useState<'list' | 'grouped'>('list');
+  const [showPercentage, setShowPercentage] = useState(false);
+  const [expandedSubjects, setExpandedSubjects] = useState<Record<string, boolean>>({});
+
   const [showAddAction, setShowAddAction] = useState(false);
   const [showChallengeSelect, setShowChallengeSelect] = useState(false);
   const [isManualInput, setIsManualInput] = useState(false);
@@ -43,6 +58,33 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
   const displayTotal = filterKeyword && !isSemesterMode
     ? displayedLogs.reduce((acc, l) => acc + l.s, 0)
     : student.total;
+
+  // --- Aggregation Logic ---
+  const aggregatedData = useMemo<Record<string, SubjectStats>>(() => {
+      const data: Record<string, SubjectStats> = {};
+      
+      displayedLogs.forEach(log => {
+          const sub = log.sub || "כללי";
+          if (!data[sub]) {
+              data[sub] = { totalCount: 0, totalScore: 0, actions: {} };
+          }
+          
+          data[sub].totalCount += log.c;
+          data[sub].totalScore += log.s;
+
+          if (!data[sub].actions[log.k]) {
+              data[sub].actions[log.k] = { count: 0, score: 0 };
+          }
+          data[sub].actions[log.k].count += log.c;
+          data[sub].actions[log.k].score += log.s;
+      });
+
+      return data;
+  }, [displayedLogs]);
+
+  const toggleSubject = (subject: string) => {
+      setExpandedSubjects(prev => ({ ...prev, [subject]: !prev[subject] }));
+  };
 
   const handleWhatsApp = (phone: string, parentName: string) => {
     if (!phone) return;
@@ -414,15 +456,37 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
 
                 {/* Activity Logs */}
                 <div className="space-y-3">
-                    <h3 className="text-[10px] font-bold text-gray-500 uppercase flex items-center gap-2 mr-1">
-                    <Calendar size={12}/> פירוט פעולות וניקוד {filterKeyword && !isSemesterMode && "(מסונן)"}
-                    </h3>
+                    <div className="flex justify-between items-center">
+                        <h3 className="text-[10px] font-bold text-gray-500 uppercase flex items-center gap-2 mr-1">
+                        <Calendar size={12}/> פירוט פעולות וניקוד {filterKeyword && !isSemesterMode && "(מסונן)"}
+                        </h3>
+                        
+                        {/* View Toggle */}
+                        <div className="flex bg-white/5 p-1 rounded-lg">
+                            <button 
+                                onClick={() => setViewMode('list')}
+                                className={`p-1.5 rounded-md transition ${viewMode === 'list' ? 'bg-accent text-accent-fg' : 'text-gray-400'}`}
+                                title="רשימה מלאה"
+                            >
+                                <List size={14} />
+                            </button>
+                            <button 
+                                onClick={() => setViewMode('grouped')}
+                                className={`p-1.5 rounded-md transition ${viewMode === 'grouped' ? 'bg-accent text-accent-fg' : 'text-gray-400'}`}
+                                title="סיכום לפי מקצוע"
+                            >
+                                <PieChart size={14} />
+                            </button>
+                        </div>
+                    </div>
+
                     <div className="space-y-2">
                     {displayedLogs.length === 0 ? (
                         <div className="text-center py-10 text-gray-500 text-xs">
                             {filterKeyword && !isSemesterMode ? "לא נמצאו נתונים תואמים לסינון" : "טרם נרשמו פעולות"}
                         </div>
-                    ) : (
+                    ) : viewMode === 'list' ? (
+                        // --- LIST VIEW ---
                         displayedLogs.slice().reverse().map((logItem, idx) => (
                         <div key={idx} className="bg-black/10 p-4 rounded-2xl border border-border flex justify-between items-start">
                             <div className="flex-1">
@@ -450,6 +514,70 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
                             </div>
                         </div>
                         ))
+                    ) : (
+                        // --- GROUPED VIEW ---
+                        <div className="space-y-3">
+                            <div className="flex justify-end">
+                                <button 
+                                    onClick={() => setShowPercentage(!showPercentage)}
+                                    className="text-[10px] flex items-center gap-1 bg-white/5 px-2 py-1 rounded text-gray-400 hover:text-white transition"
+                                >
+                                    {showPercentage ? <Hash size={10}/> : <Percent size={10}/>}
+                                    {showPercentage ? "הצג מספרים" : "הצג אחוזים"}
+                                </button>
+                            </div>
+
+                            {(Object.entries(aggregatedData) as [string, SubjectStats][]).sort((a,b) => b[1].totalCount - a[1].totalCount).map(([subject, data]) => (
+                                <div key={subject} className="bg-black/20 rounded-2xl border border-white/5 overflow-hidden">
+                                    <button 
+                                        onClick={() => toggleSubject(subject)}
+                                        className="w-full p-4 flex justify-between items-center hover:bg-white/5 transition"
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <GraduationCap size={16} className="text-accent/70"/>
+                                            <span className="font-bold text-sm text-white">{subject}</span>
+                                            <span className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded-full text-gray-400">{data.totalCount} רישומים</span>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <span className={`text-xs font-bold ${data.totalScore >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                                {data.totalScore > 0 ? '+' : ''}{data.totalScore}₪
+                                            </span>
+                                            {expandedSubjects[subject] ? <ChevronUp size={16} className="text-gray-500"/> : <ChevronDown size={16} className="text-gray-500"/>}
+                                        </div>
+                                    </button>
+                                    
+                                    {expandedSubjects[subject] && (
+                                        <div className="p-2 border-t border-white/5 bg-black/10 space-y-1">
+                                            {(Object.entries(data.actions) as [string, ActionStats][]).sort((a,b) => b[1].count - a[1].count).map(([action, stats]) => {
+                                                const percentage = Math.round((stats.count / data.totalCount) * 100);
+                                                return (
+                                                    <div key={action} className="flex justify-between items-center p-2 rounded-lg hover:bg-white/5 text-xs">
+                                                        <span className="text-gray-300">{action}</span>
+                                                        <div className="flex items-center gap-2">
+                                                            {showPercentage ? (
+                                                                <div className="flex items-center gap-1.5 min-w-[50px] justify-end">
+                                                                    <div className="w-10 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                                                                        <div className="h-full bg-accent" style={{width: `${percentage}%`}}></div>
+                                                                    </div>
+                                                                    <span className="text-[10px] font-mono text-gray-400">{percentage}%</span>
+                                                                </div>
+                                                            ) : (
+                                                                <span className="text-[10px] bg-white/10 px-2 py-0.5 rounded text-gray-300 min-w-[30px] text-center">
+                                                                    {stats.count}
+                                                                </span>
+                                                            )}
+                                                            <span className={`w-10 text-right font-bold ${stats.score >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                                                {stats.score > 0 ? '+' : ''}{stats.score}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
                     )}
                     </div>
                 </div>
