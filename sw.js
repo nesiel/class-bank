@@ -1,5 +1,5 @@
 
-const CACHE_NAME = 'classroom-bank-v3';
+const CACHE_NAME = 'classroom-bank-v4';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',

@@ -1762,7 +1762,7 @@ function createStudyGuideDoc() {
                            <div className="text-center py-10 text-gray-500">
                                <Target size={48} className="mx-auto mb-2 opacity-20"/>
                                <p>טרם הוגדרו יעדים לתלמידים.</p>
-                               <p className="text-xs mt-2">ניתן להגדיר יעד אישי בלחיצה על שם התלמיד > לשונית "ציונים ויעדים".</p>
+                               <p className="text-xs mt-2">ניתן להגדיר יעד אישי בלחיצה על שם התלמיד &gt; לשונית "ציונים ויעדים".</p>
                            </div>
                        ) : (
                            (Object.values(db) as Student[])
