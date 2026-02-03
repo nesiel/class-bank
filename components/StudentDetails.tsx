@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Student, AppConfig, Challenge } from '../types';
-import { X, Trash2, Calendar, MessageCircle, Phone, Heart, Users, GraduationCap, PlusCircle, Check, Mail, Smartphone, Home, Trophy, Filter, RotateCcw, Target, Activity, FileSpreadsheet, PieChart, List, Percent, Hash, ChevronDown, ChevronUp } from 'lucide-react';
+import { X, Trash2, Calendar, MessageCircle, Phone, Heart, Users, GraduationCap, PlusCircle, Check, Mail, Smartphone, Home, Trophy, Filter, RotateCcw, Target, Activity, FileSpreadsheet, PieChart, List, Percent, Hash, ChevronDown, ChevronUp, AlertCircle, ThumbsUp, ThumbsDown } from 'lucide-react';
 
 interface ActionStats {
   count: number;
@@ -11,6 +11,8 @@ interface ActionStats {
 interface SubjectStats {
   totalCount: number;
   totalScore: number;
+  positiveCount: number;
+  negativeCount: number;
   actions: Record<string, ActionStats>;
 }
 
@@ -28,7 +30,8 @@ interface StudentDetailsProps {
 
 export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config, onClose, onDeleteLog, onAddLog, onMarkNachat, onUpdateStudent, isAuthenticated, filterKeyword }) => {
   const [activeTab, setActiveTab] = useState<'behavior' | 'grades'>('behavior');
-  const [viewMode, setViewMode] = useState<'list' | 'grouped'>('list');
+  // Default to 'grouped' to show the subject breakdown first as requested
+  const [viewMode, setViewMode] = useState<'list' | 'grouped'>('grouped'); 
   const [showPercentage, setShowPercentage] = useState(false);
   const [expandedSubjects, setExpandedSubjects] = useState<Record<string, boolean>>({});
 
@@ -48,8 +51,11 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
 
   const isSemesterMode = filterKeyword === 'SEMESTER_MODE';
 
+  // SAFETY CHECK: Ensure logs exists
+  const safeLogs = student.logs || [];
+
   // Filter logs if keyword is provided, but if in Semester Mode show everything (it's a historical snapshot)
-  const logsWithIndex = student.logs.map((log, index) => ({ ...log, originalIndex: index }));
+  const logsWithIndex = safeLogs.map((log, index) => ({ ...log, originalIndex: index }));
   
   const displayedLogs = filterKeyword && !isSemesterMode
     ? logsWithIndex.filter(l => l.sub && l.sub.includes(filterKeyword))
@@ -59,18 +65,27 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
     ? displayedLogs.reduce((acc, l) => acc + l.s, 0)
     : student.total;
 
-  // --- Aggregation Logic ---
+  // --- Aggregation Logic (Per Subject) ---
   const aggregatedData = useMemo<Record<string, SubjectStats>>(() => {
       const data: Record<string, SubjectStats> = {};
       
       displayedLogs.forEach(log => {
-          const sub = log.sub || "כללי";
+          const sub = log.sub || "כללי"; // Default subject if missing
           if (!data[sub]) {
-              data[sub] = { totalCount: 0, totalScore: 0, actions: {} };
+              data[sub] = { 
+                  totalCount: 0, 
+                  totalScore: 0, 
+                  positiveCount: 0,
+                  negativeCount: 0,
+                  actions: {} 
+              };
           }
           
           data[sub].totalCount += log.c;
           data[sub].totalScore += log.s;
+          
+          if (log.s > 0) data[sub].positiveCount += log.c;
+          else if (log.s < 0) data[sub].negativeCount += log.c;
 
           if (!data[sub].actions[log.k]) {
               data[sub].actions[log.k] = { count: 0, score: 0 };
@@ -152,8 +167,9 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
   };
 
   // Grade Calculations
-  const average = student.grades && student.grades.length > 0 
-    ? Math.round(student.grades.reduce((sum, g) => sum + (Number(g.score) || 0), 0) / student.grades.length) 
+  const safeGrades = student.grades || [];
+  const average = safeGrades.length > 0 
+    ? Math.round(safeGrades.reduce((sum, g) => sum + (Number(g.score) || 0), 0) / safeGrades.length) 
     : 0;
 
   const getScoreColor = (score: number) => {
@@ -188,21 +204,9 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
                            <Filter size={10} /> נתוני תפילה בלבד
                        </span>
                    ) : (
-                       "מאזן אישי בבנק הכיתתי"
+                       isAuthenticated ? "מאזן אישי בבנק הכיתתי" : "אזור אישי: ציונים ונקודות"
                    )}
                 </p>
-                <div className="flex flex-wrap gap-2">
-                    {student.studentCell && (
-                        <span className="flex items-center gap-1 text-[10px] bg-white/5 px-2 py-0.5 rounded-full text-gray-400">
-                            <Smartphone size={10} /> {student.studentCell}
-                        </span>
-                    )}
-                    {student.homePhone && (
-                        <span className="flex items-center gap-1 text-[10px] bg-white/5 px-2 py-0.5 rounded-full text-gray-400">
-                            <Home size={10} /> {student.homePhone}
-                        </span>
-                    )}
-                </div>
             </div>
           </div>
           <button onClick={onClose} className="p-2 bg-white/5 rounded-full hover:bg-white/10 text-accent">
@@ -210,7 +214,7 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
           </button>
         </div>
 
-        {/* Tab Switcher - Visible to Students too */}
+        {/* Tab Switcher */}
         {!filterKeyword && (
             <div className="flex px-6 gap-2 mb-2">
                 <button 
@@ -230,7 +234,7 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
 
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           
-          {/* Admin Tools: Password Reset - TEACHER ONLY */}
+          {/* Admin Tools */}
           {isAuthenticated && activeTab === 'behavior' && !filterKeyword && !isSemesterMode && (
               <div className="flex gap-2">
                   {student.isHiddenFromPodium ? (
@@ -254,7 +258,7 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
               </div>
           )}
 
-          {/* Quick Actions / Manual Add - TEACHER ONLY */}
+          {/* Quick Actions */}
           {isAuthenticated && activeTab === 'behavior' && !filterKeyword && !isSemesterMode && (
             <div className="bg-accent/5 p-4 rounded-3xl border border-accent/20">
                {!showAddAction && !showChallengeSelect ? (
@@ -348,14 +352,14 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
             </div>
           )}
 
-          {/* Grades View - Visible to Student & Teacher */}
+          {/* Grades View */}
           {activeTab === 'grades' && (
               <div className="space-y-4 animate-in fade-in">
                   <div className="bg-black/20 p-4 rounded-3xl border border-blue-500/20">
                       <div className="flex justify-between items-center mb-4">
                           <div className="flex items-center gap-2">
                               <Activity className="text-blue-400" size={20} />
-                              <h3 className="font-bold text-white">הישגים לימודיים</h3>
+                              <h3 className="font-bold text-white">{isAuthenticated ? "הישגים לימודיים" : "הציונים שלי"}</h3>
                           </div>
                           <div className="text-center">
                               <span className="text-[10px] text-gray-400 block">ממוצע כולל</span>
@@ -364,8 +368,8 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
                       </div>
 
                       <div className="space-y-3 max-h-60 overflow-y-auto pr-1 custom-scrollbar">
-                          {(!student.grades || student.grades.length === 0) && <p className="text-gray-500 text-xs text-center">לא הוזנו ציונים</p>}
-                          {student.grades?.map((g, i) => (
+                          {(!safeGrades || safeGrades.length === 0) && <p className="text-gray-500 text-xs text-center">לא הוזנו ציונים</p>}
+                          {safeGrades.map((g, i) => (
                               <div key={i} className="space-y-1">
                                   <div className="flex justify-between text-xs font-bold">
                                       <span className="text-gray-300">{g.subject}</span>
@@ -385,7 +389,7 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
                   {/* Goal Setting */}
                   <div className="bg-orange-500/10 p-4 rounded-3xl border border-orange-500/20">
                       <h4 className="font-bold text-orange-400 mb-2 flex items-center gap-2">
-                          <Target size={16}/> יעד לימודי אישי
+                          <Target size={16}/> {isAuthenticated ? "יעד לימודי אישי" : "היעד הבא שלי"}
                       </h4>
                       {isAuthenticated ? (
                           <div className="flex gap-2">
@@ -399,9 +403,16 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
                               <button onClick={handleSaveGoal} className="bg-orange-500 text-white font-bold px-4 rounded-xl text-xs shadow-lg active:scale-95">שמור</button>
                           </div>
                       ) : (
-                          <p className="text-sm text-gray-300 italic">
-                              {student.academicGoal || "טרם נקבע יעד לימודי."}
-                          </p>
+                          <div className="flex flex-col gap-2">
+                              <p className="text-sm text-gray-300 italic bg-black/20 p-3 rounded-xl border border-white/5">
+                                  "{student.academicGoal || "טרם נקבע יעד. פנה למורה לקביעת יעד אישי!"}"
+                              </p>
+                              {student.academicGoal && (
+                                  <div className="flex items-center gap-2 text-[10px] text-orange-400/70">
+                                      <Check size={12}/> בהצלחה! אני מאמין בך!
+                                  </div>
+                              )}
+                          </div>
                       )}
                   </div>
               </div>
@@ -410,55 +421,32 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
           {/* Behavior Content */}
           {activeTab === 'behavior' && (
             <>
-                {/* Parents Section - Visible to all */}
-                <div className="space-y-3">
-                    <h3 className="text-[10px] font-bold text-gray-500 uppercase flex items-center gap-2 mr-1">
-                    <Users size={12}/> אנשי קשר ודיווחי נחת
-                    </h3>
-                    <div className="grid grid-cols-1 gap-2">
-                    <div className="bg-white/5 p-4 rounded-2xl border border-white/5 flex flex-col justify-center">
-                        <div className="flex justify-between items-center mb-1">
-                        <div>
-                            <p className="text-xs font-bold text-pink-400">אמא: {student.nameMother || "לא ידוע"}</p>
-                            <p className="text-[10px] text-gray-500">{student.phoneMother || "---"}</p>
-                            {student.emailMother && <p className="text-[9px] text-gray-600 flex items-center gap-1 mt-0.5"><Mail size={8}/> {student.emailMother}</p>}
-                        </div>
-                        <div className="flex gap-2">
+                {/* Parents Section - ONLY FOR TEACHER */}
+                {isAuthenticated && (
+                    <div className="space-y-3">
+                        <h3 className="text-[10px] font-bold text-gray-500 uppercase flex items-center gap-2 mr-1">
+                        <Users size={12}/> אנשי קשר ודיווחי נחת
+                        </h3>
+                        <div className="grid grid-cols-2 gap-2">
                             {student.phoneMother && (
-                            <>
-                                <button onClick={() => window.open(`tel:${student.phoneMother}`)} className="p-2 bg-white/10 rounded-full text-white"><Phone size={14}/></button>
-                                {isAuthenticated && <button onClick={() => handleWhatsApp(student.phoneMother!, student.nameMother || 'אמא')} className="p-2 bg-green-500/20 rounded-full text-green-500"><MessageCircle size={14}/></button>}
-                            </>
+                                <button onClick={() => handleWhatsApp(student.phoneMother!, student.nameMother || 'אמא')} className="bg-pink-500/10 border border-pink-500/30 p-2 rounded-xl flex items-center justify-center gap-2 text-pink-400 hover:bg-pink-500/20">
+                                    <MessageCircle size={14}/> אמא
+                                </button>
                             )}
-                        </div>
-                        </div>
-                    </div>
-                    
-                    <div className="bg-white/5 p-4 rounded-2xl border border-white/5 flex flex-col justify-center">
-                        <div className="flex justify-between items-center mb-1">
-                        <div>
-                            <p className="text-xs font-bold text-blue-400">אבא: {student.nameFather || "לא ידוע"}</p>
-                            <p className="text-[10px] text-gray-500">{student.phoneFather || "---"}</p>
-                            {student.emailFather && <p className="text-[9px] text-gray-600 flex items-center gap-1 mt-0.5"><Mail size={8}/> {student.emailFather}</p>}
-                        </div>
-                        <div className="flex gap-2">
                             {student.phoneFather && (
-                            <>
-                                <button onClick={() => window.open(`tel:${student.phoneFather}`)} className="p-2 bg-white/10 rounded-full text-white"><Phone size={14}/></button>
-                                {isAuthenticated && <button onClick={() => handleWhatsApp(student.phoneFather!, student.nameFather || 'אבא')} className="p-2 bg-green-500/20 rounded-full text-green-500"><MessageCircle size={14}/></button>}
-                            </>
+                                <button onClick={() => handleWhatsApp(student.phoneFather!, student.nameFather || 'אבא')} className="bg-blue-500/10 border border-blue-500/30 p-2 rounded-xl flex items-center justify-center gap-2 text-blue-400 hover:bg-blue-500/20">
+                                    <MessageCircle size={14}/> אבא
+                                </button>
                             )}
                         </div>
-                        </div>
                     </div>
-                    </div>
-                </div>
+                )}
 
                 {/* Activity Logs */}
                 <div className="space-y-3">
                     <div className="flex justify-between items-center">
                         <h3 className="text-[10px] font-bold text-gray-500 uppercase flex items-center gap-2 mr-1">
-                        <Calendar size={12}/> פירוט פעולות וניקוד {filterKeyword && !isSemesterMode && "(מסונן)"}
+                        <Calendar size={12}/> {viewMode === 'grouped' ? 'סיכום לפי מקצועות' : 'רשימת פעולות'}
                         </h3>
                         
                         {/* View Toggle */}
@@ -485,7 +473,93 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
                         <div className="text-center py-10 text-gray-500 text-xs">
                             {filterKeyword && !isSemesterMode ? "לא נמצאו נתונים תואמים לסינון" : "טרם נרשמו פעולות"}
                         </div>
-                    ) : viewMode === 'list' ? (
+                    ) : viewMode === 'grouped' ? (
+                        // --- GROUPED VIEW (IMPROVED) ---
+                        <div className="space-y-3">
+                            <div className="flex justify-end">
+                                <button 
+                                    onClick={() => setShowPercentage(!showPercentage)}
+                                    className="text-[10px] flex items-center gap-1 bg-white/5 px-2 py-1 rounded text-gray-400 hover:text-white transition"
+                                >
+                                    {showPercentage ? <Hash size={10}/> : <Percent size={10}/>}
+                                    {showPercentage ? "הצג מספרים" : "הצג אחוזים"}
+                                </button>
+                            </div>
+
+                            {(Object.entries(aggregatedData) as [string, SubjectStats][]).sort((a,b) => b[1].totalScore - a[1].totalScore).map(([subject, data]) => {
+                                // Determine Subject Status Color
+                                let statusColor = 'border-gray-500 bg-gray-500/5';
+                                let textColor = 'text-gray-400';
+                                if (data.totalScore > 0) {
+                                    statusColor = 'border-green-500 bg-green-500/10';
+                                    textColor = 'text-green-500';
+                                } else if (data.totalScore < 0) {
+                                    statusColor = 'border-red-500 bg-red-500/10';
+                                    textColor = 'text-red-500';
+                                }
+
+                                // Calculate Health Bar Width
+                                const totalEvents = data.positiveCount + data.negativeCount;
+                                const posWidth = totalEvents > 0 ? (data.positiveCount / totalEvents) * 100 : 0;
+
+                                return (
+                                    <div key={subject} className={`rounded-xl border-r-4 ${statusColor} overflow-hidden bg-black/20`}>
+                                        <button 
+                                            onClick={() => toggleSubject(subject)}
+                                            className="w-full p-4 flex flex-col gap-2 hover:bg-white/5 transition"
+                                        >
+                                            <div className="flex justify-between items-center w-full">
+                                                <div className="flex items-center gap-2">
+                                                    <GraduationCap size={18} className={textColor}/>
+                                                    <span className="font-bold text-base text-white">{subject}</span>
+                                                </div>
+                                                <div className="flex items-center gap-3">
+                                                    <span className={`text-lg font-black ${textColor} bg-black/20 px-2 py-0.5 rounded-lg`}>
+                                                        {data.totalScore > 0 ? '+' : ''}{data.totalScore}
+                                                    </span>
+                                                    {expandedSubjects[subject] ? <ChevronUp size={16} className="text-gray-500"/> : <ChevronDown size={16} className="text-gray-500"/>}
+                                                </div>
+                                            </div>
+                                            
+                                            {/* Health Bar */}
+                                            <div className="w-full h-1.5 bg-red-500/30 rounded-full overflow-hidden flex">
+                                                <div className="h-full bg-green-500" style={{width: `${posWidth}%`}}></div>
+                                            </div>
+                                            <div className="flex justify-between text-[9px] text-gray-500 px-1">
+                                                <span className="flex items-center gap-1 text-green-400"><ThumbsUp size={8}/> {data.positiveCount}</span>
+                                                <span className="flex items-center gap-1 text-red-400"><ThumbsDown size={8}/> {data.negativeCount}</span>
+                                            </div>
+                                        </button>
+                                        
+                                        {expandedSubjects[subject] && (
+                                            <div className="p-3 border-t border-white/5 bg-black/10 space-y-2 animate-in slide-in-from-top-1">
+                                                {(Object.entries(data.actions) as [string, ActionStats][]).sort((a,b) => b[1].count - a[1].count).map(([action, stats]) => {
+                                                    const percentage = Math.round((stats.count / data.totalCount) * 100);
+                                                    return (
+                                                        <div key={action} className="flex justify-between items-center p-2 rounded-lg bg-white/5 hover:bg-white/10 text-xs">
+                                                            <span className="text-gray-300 font-medium">{action}</span>
+                                                            <div className="flex items-center gap-3">
+                                                                {showPercentage ? (
+                                                                    <span className="text-[10px] font-mono text-gray-500">{percentage}%</span>
+                                                                ) : (
+                                                                    <span className="text-[10px] bg-white/10 px-2 py-0.5 rounded text-gray-300">
+                                                                        x{stats.count}
+                                                                    </span>
+                                                                )}
+                                                                <span className={`w-8 text-right font-bold ${stats.score >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                                                    {stats.score > 0 ? '+' : ''}{stats.score}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    ) : (
                         // --- LIST VIEW ---
                         displayedLogs.slice().reverse().map((logItem, idx) => (
                         <div key={idx} className="bg-black/10 p-4 rounded-2xl border border-border flex justify-between items-start">
@@ -514,70 +588,6 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
                             </div>
                         </div>
                         ))
-                    ) : (
-                        // --- GROUPED VIEW ---
-                        <div className="space-y-3">
-                            <div className="flex justify-end">
-                                <button 
-                                    onClick={() => setShowPercentage(!showPercentage)}
-                                    className="text-[10px] flex items-center gap-1 bg-white/5 px-2 py-1 rounded text-gray-400 hover:text-white transition"
-                                >
-                                    {showPercentage ? <Hash size={10}/> : <Percent size={10}/>}
-                                    {showPercentage ? "הצג מספרים" : "הצג אחוזים"}
-                                </button>
-                            </div>
-
-                            {(Object.entries(aggregatedData) as [string, SubjectStats][]).sort((a,b) => b[1].totalCount - a[1].totalCount).map(([subject, data]) => (
-                                <div key={subject} className="bg-black/20 rounded-2xl border border-white/5 overflow-hidden">
-                                    <button 
-                                        onClick={() => toggleSubject(subject)}
-                                        className="w-full p-4 flex justify-between items-center hover:bg-white/5 transition"
-                                    >
-                                        <div className="flex items-center gap-2">
-                                            <GraduationCap size={16} className="text-accent/70"/>
-                                            <span className="font-bold text-sm text-white">{subject}</span>
-                                            <span className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded-full text-gray-400">{data.totalCount} רישומים</span>
-                                        </div>
-                                        <div className="flex items-center gap-3">
-                                            <span className={`text-xs font-bold ${data.totalScore >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                                                {data.totalScore > 0 ? '+' : ''}{data.totalScore}₪
-                                            </span>
-                                            {expandedSubjects[subject] ? <ChevronUp size={16} className="text-gray-500"/> : <ChevronDown size={16} className="text-gray-500"/>}
-                                        </div>
-                                    </button>
-                                    
-                                    {expandedSubjects[subject] && (
-                                        <div className="p-2 border-t border-white/5 bg-black/10 space-y-1">
-                                            {(Object.entries(data.actions) as [string, ActionStats][]).sort((a,b) => b[1].count - a[1].count).map(([action, stats]) => {
-                                                const percentage = Math.round((stats.count / data.totalCount) * 100);
-                                                return (
-                                                    <div key={action} className="flex justify-between items-center p-2 rounded-lg hover:bg-white/5 text-xs">
-                                                        <span className="text-gray-300">{action}</span>
-                                                        <div className="flex items-center gap-2">
-                                                            {showPercentage ? (
-                                                                <div className="flex items-center gap-1.5 min-w-[50px] justify-end">
-                                                                    <div className="w-10 h-1.5 bg-gray-700 rounded-full overflow-hidden">
-                                                                        <div className="h-full bg-accent" style={{width: `${percentage}%`}}></div>
-                                                                    </div>
-                                                                    <span className="text-[10px] font-mono text-gray-400">{percentage}%</span>
-                                                                </div>
-                                                            ) : (
-                                                                <span className="text-[10px] bg-white/10 px-2 py-0.5 rounded text-gray-300 min-w-[30px] text-center">
-                                                                    {stats.count}
-                                                                </span>
-                                                            )}
-                                                            <span className={`w-10 text-right font-bold ${stats.score >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                                                                {stats.score > 0 ? '+' : ''}{stats.score}
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
                     )}
                     </div>
                 </div>
@@ -588,7 +598,7 @@ export const StudentDetails: React.FC<StudentDetailsProps> = ({ student, config,
         <div className="p-6 bg-primary border-t border-accent/20 flex justify-between items-center">
           <div className="flex items-center gap-2 text-accent/60">
             <Heart size={16} className="animate-pulse" />
-            <span className="text-xs font-bold uppercase tracking-widest">{isSemesterMode ? "ציון מחצית כולל" : filterKeyword ? "מאזן תפילה" : "סך הכל עושר כיתתי"}</span>
+            <span className="text-xs font-bold uppercase tracking-widest">{isSemesterMode ? "ציון מחצית כולל" : filterKeyword ? "מאזן תפילה" : isAuthenticated ? "סך הכל עושר כיתתי" : "המאזן שלי"}</span>
           </div>
           <span className="text-3xl font-black text-accent">{displayTotal}₪</span>
         </div>

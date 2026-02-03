@@ -121,6 +121,20 @@ export interface LearningResource {
     dateAdded: string;
 }
 
+// New Interface for UI State Persistence
+export interface UIPreferences {
+    adminCollapsed: Record<string, boolean>;
+    resetOptions: {
+        points: boolean;
+        logs: boolean;
+        purchases: boolean;
+        requests: boolean;
+        grades: boolean;
+        scholastic: boolean;
+        alfon: boolean;
+    };
+}
+
 export interface AppConfig {
   slogan: string;
   logo: string;
@@ -137,6 +151,9 @@ export interface AppConfig {
 
   // Security & Site Management
   isSystemLocked?: boolean; // New: Prevents student access
+
+  // UI Persistence
+  uiPreferences?: UIPreferences;
 
   rules: string;
   theme: ThemeType;
@@ -195,6 +212,23 @@ export const DEFAULT_CONFIG: AppConfig = {
   learningSubjects: ['משנה', 'גמרא', 'חומש', 'הלכה', 'כללי'],
   learningResources: [],
   isSystemLocked: false,
+  uiPreferences: {
+      adminCollapsed: {
+        store_manage: true,
+        score_settings: true,
+        rules_manage: true,
+        learning_manage: true,
+      },
+      resetOptions: {
+          points: true,
+          logs: true,
+          purchases: true,
+          requests: true,
+          grades: false, 
+          scholastic: true,
+          alfon: false 
+      }
+  },
   rules: `תקנון הכיתה:
 1. יש להגיע בזמן לשיעורים.
 2. יש להביא ציוד לימודי מלא.

@@ -8,9 +8,10 @@ interface PodiumProps {
   onRemoveStudent: (name: string) => void;
   onStudentClick: (student: Student) => void;
   scoreSuffix?: string; // Optional suffix (e.g., '₪' or '%')
+  isAuthenticated?: boolean; // New prop to check if user is teacher
 }
 
-export const Podium: React.FC<PodiumProps> = ({ students, onRemoveStudent, onStudentClick, scoreSuffix = '₪' }) => {
+export const Podium: React.FC<PodiumProps> = ({ students, onRemoveStudent, onStudentClick, scoreSuffix = '₪', isAuthenticated = false }) => {
   const first = students[0];
   const second = students[1];
   const third = students[2];
@@ -43,26 +44,30 @@ export const Podium: React.FC<PodiumProps> = ({ students, onRemoveStudent, onStu
                     className="relative bg-card/80 p-1.5 rounded-xl border border-border flex flex-col items-center min-w-[80px] cursor-pointer active:scale-95 active:bg-white/10 transition-all group shadow-lg"
                     onClick={() => onStudentClick(second)}
                 >
-                    {/* Remove Button */}
-                    <button 
-                        onClick={(e) => { e.stopPropagation(); onRemoveStudent(second.name); }}
-                        className="absolute -left-2 -top-2 bg-red-500/80 text-white p-1 rounded-full hover:bg-red-600 transition-colors z-30 opacity-0 group-hover:opacity-100"
-                        title="הסר מהפודיום"
-                    >
-                        <X size={10} />
-                    </button>
+                    {/* Remove Button - Only for Teacher */}
+                    {isAuthenticated && (
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); onRemoveStudent(second.name); }}
+                            className="absolute -left-2 -top-2 bg-red-500/80 text-white p-1 rounded-full hover:bg-red-600 transition-colors z-30 opacity-0 group-hover:opacity-100"
+                            title="הסר מהפודיום"
+                        >
+                            <X size={10} />
+                        </button>
+                    )}
 
                     <span className="text-xs font-bold block text-txt/70 truncate w-20 text-center group-hover:text-accent transition-colors">{second.name}</span>
                     <span className="text-sm font-bold text-accent">{second.total}{scoreSuffix}</span>
 
-                    {/* WhatsApp */}
-                    <button 
-                        onClick={(e) => handleWhatsApp(e, second)}
-                        className="absolute -right-3 -top-3 bg-green-500/20 text-green-500 p-1.5 rounded-full hover:bg-green-500 hover:text-white transition-colors border border-green-500/30 shadow-lg z-20"
-                        title="שלח הודעת הצטיינות"
-                    >
-                    <MessageCircle size={14} />
-                    </button>
+                    {/* WhatsApp - Only for Teacher */}
+                    {isAuthenticated && (
+                        <button 
+                            onClick={(e) => handleWhatsApp(e, second)}
+                            className="absolute -right-3 -top-3 bg-green-500/20 text-green-500 p-1.5 rounded-full hover:bg-green-500 hover:text-white transition-colors border border-green-500/30 shadow-lg z-20"
+                            title="שלח הודעת הצטיינות"
+                        >
+                        <MessageCircle size={14} />
+                        </button>
+                    )}
                 </div>
                 </div>
                 <div className="w-full bg-gray-400 h-24 rounded-t-lg shadow-lg flex items-center justify-center border-t-2 border-gray-300">
@@ -79,27 +84,31 @@ export const Podium: React.FC<PodiumProps> = ({ students, onRemoveStudent, onStu
                     className="relative bg-card/80 p-2 rounded-xl border border-border flex flex-col items-center min-w-[90px] cursor-pointer active:scale-95 active:bg-white/10 transition-all group shadow-xl"
                     onClick={() => onStudentClick(first)}
                 >
-                    {/* Remove Button */}
-                    <button 
-                        onClick={(e) => { e.stopPropagation(); onRemoveStudent(first.name); }}
-                        className="absolute -left-2 -top-2 bg-red-500/80 text-white p-1 rounded-full hover:bg-red-600 transition-colors z-30 opacity-0 group-hover:opacity-100"
-                        title="הסר מהפודיום"
-                    >
-                        <X size={12} />
-                    </button>
+                    {/* Remove Button - Only for Teacher */}
+                    {isAuthenticated && (
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); onRemoveStudent(first.name); }}
+                            className="absolute -left-2 -top-2 bg-red-500/80 text-white p-1 rounded-full hover:bg-red-600 transition-colors z-30 opacity-0 group-hover:opacity-100"
+                            title="הסר מהפודיום"
+                        >
+                            <X size={12} />
+                        </button>
+                    )}
 
                     <Trophy className="w-8 h-8 text-yellow-500 mb-1 drop-shadow-md group-hover:text-accent transition-colors" />
                     <span className="text-sm font-bold block text-txt truncate w-24 text-center group-hover:text-accent transition-colors">{first.name}</span>
                     <span className="text-lg font-bold text-accent drop-shadow-sm">{first.total}{scoreSuffix}</span>
 
-                    {/* WhatsApp */}
-                    <button 
-                        onClick={(e) => handleWhatsApp(e, first)}
-                        className="absolute -right-3 -top-3 bg-green-500/20 text-green-500 p-1.5 rounded-full hover:bg-green-500 hover:text-white transition-colors border border-green-500/30 shadow-lg z-20"
-                        title="שלח הודעת הצטיינות"
-                    >
-                        <MessageCircle size={16} />
-                    </button>
+                    {/* WhatsApp - Only for Teacher */}
+                    {isAuthenticated && (
+                        <button 
+                            onClick={(e) => handleWhatsApp(e, first)}
+                            className="absolute -right-3 -top-3 bg-green-500/20 text-green-500 p-1.5 rounded-full hover:bg-green-500 hover:text-white transition-colors border border-green-500/30 shadow-lg z-20"
+                            title="שלח הודעת הצטיינות"
+                        >
+                            <MessageCircle size={16} />
+                        </button>
+                    )}
                 </div>
             </div>
             <div className="w-full bg-yellow-500 h-36 rounded-t-lg shadow-lg flex items-center justify-center border-t-4 border-yellow-200 relative overflow-hidden">
@@ -117,26 +126,30 @@ export const Podium: React.FC<PodiumProps> = ({ students, onRemoveStudent, onStu
                         className="relative bg-card/80 p-1.5 rounded-xl border border-border flex flex-col items-center min-w-[80px] cursor-pointer active:scale-95 active:bg-white/10 transition-all group shadow-lg"
                         onClick={() => onStudentClick(third)}
                     >
-                        {/* Remove Button */}
-                        <button 
-                            onClick={(e) => { e.stopPropagation(); onRemoveStudent(third.name); }}
-                            className="absolute -left-2 -top-2 bg-red-500/80 text-white p-1 rounded-full hover:bg-red-600 transition-colors z-30 opacity-0 group-hover:opacity-100"
-                            title="הסר מהפודיום"
-                        >
-                            <X size={10} />
-                        </button>
+                        {/* Remove Button - Only for Teacher */}
+                        {isAuthenticated && (
+                            <button 
+                                onClick={(e) => { e.stopPropagation(); onRemoveStudent(third.name); }}
+                                className="absolute -left-2 -top-2 bg-red-500/80 text-white p-1 rounded-full hover:bg-red-600 transition-colors z-30 opacity-0 group-hover:opacity-100"
+                                title="הסר מהפודיום"
+                            >
+                                <X size={10} />
+                            </button>
+                        )}
 
                         <span className="text-xs font-bold block text-txt/70 truncate w-20 text-center group-hover:text-accent transition-colors">{third.name}</span>
                         <span className="text-sm font-bold text-accent">{third.total}{scoreSuffix}</span>
 
-                        {/* WhatsApp */}
-                        <button 
-                        onClick={(e) => handleWhatsApp(e, third)}
-                        className="absolute -right-3 -top-3 bg-green-500/20 text-green-500 p-1.5 rounded-full hover:bg-green-500 hover:text-white transition-colors border border-green-500/30 shadow-lg z-20"
-                        title="שלח הודעת הצטיינות"
-                    >
-                        <MessageCircle size={14} />
-                    </button>
+                        {/* WhatsApp - Only for Teacher */}
+                        {isAuthenticated && (
+                            <button 
+                            onClick={(e) => handleWhatsApp(e, third)}
+                            className="absolute -right-3 -top-3 bg-green-500/20 text-green-500 p-1.5 rounded-full hover:bg-green-500 hover:text-white transition-colors border border-green-500/30 shadow-lg z-20"
+                            title="שלח הודעת הצטיינות"
+                        >
+                            <MessageCircle size={14} />
+                        </button>
+                        )}
                     </div>
                 </div>
                 <div className="w-full bg-orange-700 h-16 rounded-t-lg shadow-lg flex items-center justify-center border-t-2 border-orange-600">
@@ -164,12 +177,15 @@ export const Podium: React.FC<PodiumProps> = ({ students, onRemoveStudent, onStu
                         </div>
                         <div className="flex items-center gap-3">
                             <span className="text-xs font-bold text-accent/70">{student.total}{scoreSuffix}</span>
-                            <button 
-                                onClick={(e) => handleWhatsApp(e, student)}
-                                className="p-1.5 bg-green-500/10 text-green-500 rounded-full hover:bg-green-500 hover:text-white transition-colors"
-                            >
-                                <MessageCircle size={12} />
-                            </button>
+                            {/* WhatsApp - Only for Teacher */}
+                            {isAuthenticated && (
+                                <button 
+                                    onClick={(e) => handleWhatsApp(e, student)}
+                                    className="p-1.5 bg-green-500/10 text-green-500 rounded-full hover:bg-green-500 hover:text-white transition-colors"
+                                >
+                                    <MessageCircle size={12} />
+                                </button>
+                            )}
                         </div>
                     </div>
                 ))}

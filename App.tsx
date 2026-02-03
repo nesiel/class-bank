@@ -12,7 +12,7 @@ import { LoginScreen } from './components/LoginScreen';
 import { LearningCenter } from './components/LearningCenter';
 import { GoogleGenAI } from "@google/genai";
 import { 
-  Home, ChevronUp, ChevronDown, Settings, Trash2, Trophy, FileSpreadsheet, Coins, Users, Phone, Download, LayoutGrid, Book, X, Scroll, AlertCircle, Palette, Store, Image as ImageIcon, Plus, Wand2, Loader2, GraduationCap, LogOut, KeyRound, Lock, Target, Cloud, Upload, Check, BookOpen, FileQuestion, Copy, FileType, Search, Activity, ChevronRight, Power, BrainCircuit, FileUp, Folder, RefreshCcw
+  Home, ChevronUp, ChevronDown, Settings, Trash2, Trophy, FileSpreadsheet, Coins, Users, Phone, Download, LayoutGrid, Book, X, Scroll, AlertCircle, Palette, Store, Image as ImageIcon, Plus, Wand2, Loader2, GraduationCap, LogOut, KeyRound, Lock, Target, Cloud, Upload, Check, BookOpen, FileQuestion, Copy, FileType, Search, Activity, ChevronRight, Power, BrainCircuit, FileUp, Folder, RefreshCcw, Gift, ListChecks, Contact, MessageCircle, User
 } from 'lucide-react';
 
 // Define the available admin sections
@@ -44,6 +44,10 @@ export default function App() {
   const [showRules, setShowRules] = useState(false);
   const [showBatchCommenter, setShowBatchCommenter] = useState(false);
   
+  // New Modals
+  const [showWinners, setShowWinners] = useState(false);
+  const [showGoals, setShowGoals] = useState(false);
+  
   // Podium State
   const [podiumMode, setPodiumMode] = useState<'regular' | 'grades' | 'tefillah'>('regular');
 
@@ -69,26 +73,25 @@ export default function App() {
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
   const [aiResult, setAiResult] = useState<{type: 'script' | 'text', content: string} | null>(null);
   
-  // Admin Collapsibles State
-  const [adminCollapsed, setAdminCollapsed] = useState<Record<string, boolean>>({
-    store_manage: true,
-    score_settings: true,
-    rules_manage: true,
-    learning_manage: true,
-  });
+  // Admin Collapsibles State - Initialized from Default Config
+  const [adminCollapsed, setAdminCollapsed] = useState<Record<string, boolean>>(DEFAULT_CONFIG.uiPreferences?.adminCollapsed || {});
 
-  // Reset Options State
-  const [resetOptions, setResetOptions] = useState({
+  // Reset Options State - Initialized from Default Config
+  const [resetOptions, setResetOptions] = useState(DEFAULT_CONFIG.uiPreferences?.resetOptions || {
       points: true,
       logs: true,
       purchases: true,
       requests: true,
-      grades: false, // Default: Keep grades
-      scholastic: true
+      grades: false,
+      scholastic: true,
+      alfon: false
   });
 
   // Store Persistent State
   const [cart, setCart] = useState<StoreItem[]>([]);
+  
+  // Contacts View State
+  const [expandedContacts, setExpandedContacts] = useState<Record<string, boolean>>({});
   
   // Admin View State - Order
   const [adminOrder, setAdminOrder] = useState<string[]>([
@@ -151,7 +154,13 @@ export default function App() {
                     }
                 } catch (e) { console.error(e); }
             }
+            
+            // Set State from Config
             setConfig(loadedConfig);
+            if (loadedConfig.uiPreferences) {
+                if (loadedConfig.uiPreferences.adminCollapsed) setAdminCollapsed(loadedConfig.uiPreferences.adminCollapsed);
+                if (loadedConfig.uiPreferences.resetOptions) setResetOptions(loadedConfig.uiPreferences.resetOptions);
+            }
             
             // Auto Login Check
             if (autoLogin === 'teacher') {
@@ -240,7 +249,10 @@ export default function App() {
               logs: resetOptions.logs ? [] : s.logs,
               purchases: resetOptions.purchases ? [] : s.purchases,
               requests: resetOptions.requests ? [] : s.requests,
-              challengeRequests: resetOptions.requests ? [] : s.challengeRequests,
+              
+              // PRESERVED: Challenges and Goals are preserved!
+              challengeRequests: s.challengeRequests, 
+              academicGoal: s.academicGoal,
               
               // Reset timestamps usually goes with logs
               lastNachatDate: resetOptions.logs ? undefined : s.lastNachatDate,
@@ -255,7 +267,17 @@ export default function App() {
               // Scholastic Comments
               academicReinforcement: resetOptions.scholastic ? undefined : s.academicReinforcement,
               certificateComment: resetOptions.scholastic ? undefined : s.certificateComment,
-              academicGoal: resetOptions.scholastic ? undefined : s.academicGoal,
+
+              // Alfon (Contacts)
+              nameMother: resetOptions.alfon ? undefined : s.nameMother,
+              phoneMother: resetOptions.alfon ? undefined : s.phoneMother,
+              emailMother: resetOptions.alfon ? undefined : s.emailMother,
+              nameFather: resetOptions.alfon ? undefined : s.nameFather,
+              phoneFather: resetOptions.alfon ? undefined : s.phoneFather,
+              emailFather: resetOptions.alfon ? undefined : s.emailFather,
+              studentCell: resetOptions.alfon ? undefined : s.studentCell,
+              studentEmail: resetOptions.alfon ? undefined : s.studentEmail,
+              homePhone: resetOptions.alfon ? undefined : s.homePhone,
           };
       });
 
@@ -268,6 +290,9 @@ export default function App() {
       let message = "התקופה אופסה בהצלחה!\n\n";
       if (resetOptions.grades) message += "❌ הציונים נמחקו.\n";
       else message += "✅ הציונים נשמרו.\n";
+      if (resetOptions.alfon) message += "❌ אנשי הקשר נמחקו.\n";
+      else message += "✅ אנשי הקשר נשמרו.\n";
+      message += "✅ היעדים והאתגרים נשמרו.\n";
       
       message += "\nהעמוד ירענן כעת.";
       
@@ -289,7 +314,35 @@ export default function App() {
   };
 
   const toggleAdminSection = (id: string) => {
-    setAdminCollapsed(prev => ({...prev, [id]: !prev[id]}));
+    setAdminCollapsed(prev => {
+        const newState = { ...prev, [id]: !prev[id] };
+        // Persist to config immediately
+        const newConfig = {
+            ...config,
+            uiPreferences: {
+                ...(config.uiPreferences || DEFAULT_CONFIG.uiPreferences!),
+                adminCollapsed: newState
+            }
+        };
+        saveConfig(newConfig);
+        return newState;
+    });
+  };
+
+  // Helper to save reset options
+  const handleResetOptionChange = (key: keyof typeof resetOptions, value: boolean) => {
+      setResetOptions(prev => {
+          const newState = { ...prev, [key]: value };
+          const newConfig = {
+              ...config,
+              uiPreferences: {
+                  ...(config.uiPreferences || DEFAULT_CONFIG.uiPreferences!),
+                  resetOptions: newState
+              }
+          };
+          saveConfig(newConfig);
+          return newState;
+      });
   };
 
   const getThemeVariables = (theme: ThemeType) => {
@@ -398,40 +451,6 @@ export default function App() {
           } catch (err) {
               console.error(err);
               alert("שגיאה בטעינת קובץ הציונים. ודא שהמבנה תקין.");
-          }
-          e.target.value = '';
-      }
-  };
-
-  const handleSemesterFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (e.target.files?.[0]) {
-          try {
-              const parsedDb = await parseExcel(e.target.files[0], config);
-              const final = { ...db };
-              
-              Object.entries(parsedDb).forEach(([name, data]) => {
-                  const studentData = data as Student;
-                  const currentStudent = final[name];
-                  if (currentStudent) {
-                      final[name] = {
-                          ...currentStudent,
-                          semesterScore: studentData.total,
-                          semesterLogs: studentData.logs 
-                      };
-                  } else {
-                      final[name] = {
-                          ...studentData,
-                          total: 0,
-                          logs: [],
-                          semesterScore: studentData.total,
-                          semesterLogs: studentData.logs 
-                      };
-                  }
-              });
-              saveDb(final);
-              alert("נתוני מחצית נטענו בהצלחה! (כולל פירוט התנהגות)");
-          } catch (err) {
-              alert("שגיאה בטעינת הקובץ");
           }
           e.target.value = '';
       }
@@ -781,7 +800,13 @@ function createStudyGuideDoc() {
           });
           const mergedConfig = { ...(data.config as any), storeItems: mergedStoreItems, learningResources: mergedResources };
           if (DEFAULT_CONFIG.googleAppsScriptUrl) mergedConfig.googleAppsScriptUrl = DEFAULT_CONFIG.googleAppsScriptUrl;
+          
           saveConfig(mergedConfig);
+          // Apply UI Preferences immediately from cloud
+          if (mergedConfig.uiPreferences) {
+              if (mergedConfig.uiPreferences.adminCollapsed) setAdminCollapsed(mergedConfig.uiPreferences.adminCollapsed);
+              if (mergedConfig.uiPreferences.resetOptions) setResetOptions(mergedConfig.uiPreferences.resetOptions);
+          }
       }
       setSyncStatus('saved'); setTimeout(() => setSyncStatus('idle'), 2000);
       if (!isAuto) alert("הנתונים נטענו בהצלחה!");
@@ -939,7 +964,7 @@ function createStudyGuideDoc() {
                      {/* Teacher View: Podium & Class List */}
                      {userRole === 'teacher' && (
                          <>
-                            <div className="flex justify-center gap-2 mb-4">
+                            <div className="flex justify-center gap-2 mb-2">
                                 <button 
                                     onClick={() => setPodiumMode('regular')}
                                     className={`px-4 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-2 ${podiumMode === 'regular' ? 'bg-accent text-accent-fg shadow-lg scale-105' : 'bg-white/10 text-gray-400 hover:bg-white/20'}`}
@@ -959,6 +984,21 @@ function createStudyGuideDoc() {
                                     <Scroll size={12} /> מצטייני תפילה
                                 </button>
                             </div>
+                            
+                            <div className="flex justify-center gap-2 mb-4">
+                                <button 
+                                    onClick={() => setShowWinners(true)}
+                                    className="px-4 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-2 bg-gradient-to-r from-yellow-600 to-yellow-500 text-white shadow-lg"
+                                >
+                                    <Gift size={12} /> זוכים בפרסים
+                                </button>
+                                <button 
+                                    onClick={() => setShowGoals(true)}
+                                    className="px-4 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-2 bg-white/5 border border-white/10 text-gray-300 hover:bg-white/10"
+                                >
+                                    <ListChecks size={12} /> רשימת יעדים
+                                </button>
+                            </div>
 
                             <Podium 
                                 students={getPodiumStudents()} 
@@ -970,6 +1010,7 @@ function createStudyGuideDoc() {
                                 }}
                                 onStudentClick={handleStudentClick}
                                 scoreSuffix={['grades', 'tefillah'].includes(podiumMode) ? '' : '₪'} 
+                                isAuthenticated={userRole === 'teacher'}
                             />
                          </>
                      )}
@@ -1052,30 +1093,80 @@ function createStudyGuideDoc() {
                             onChange={(e) => setSearchQuery(e.target.value)}
                          />
                      </div>
-                     <div className="space-y-2">
+                     <div className="space-y-3">
                          {(Object.values(db) as Student[])
                             .filter(s => s.name.includes(searchQuery))
                             .sort((a,b) => a.name.localeCompare(b.name))
-                            .map(s => (
-                                <button 
-                                    key={s.name}
-                                    onClick={() => handleStudentClick(s)}
-                                    className="w-full bg-card hover:bg-white/5 p-4 rounded-xl border border-white/5 flex items-center justify-between group transition active:scale-[0.98]"
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-full bg-black/30 flex items-center justify-center text-gray-400 font-bold group-hover:text-accent group-hover:border group-hover:border-accent/30 transition-colors">
-                                            {s.name.charAt(0)}
+                            .map(s => {
+                                const isExpanded = expandedContacts[s.name];
+                                const hasPhone = s.studentCell || s.phoneMother || s.phoneFather || s.homePhone;
+                                
+                                const ContactRow = ({ label, phone }: { label: string, phone?: string }) => {
+                                    if (!phone) return null;
+                                    const cleanPhone = phone.replace(/\D/g, '');
+                                    const waPhone = cleanPhone.startsWith('972') ? cleanPhone : '972' + cleanPhone.replace(/^0/, '');
+                                    
+                                    return (
+                                        <div className="flex justify-between items-center bg-white/5 p-3 rounded-lg border border-white/5 hover:bg-white/10 transition">
+                                            <div>
+                                                <span className="text-[10px] text-gray-500 font-bold block">{label}</span>
+                                                <a href={`tel:${phone}`} className="text-sm text-white font-mono font-bold hover:underline dir-ltr block text-right">{phone}</a>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <a href={`tel:${phone}`} className="p-2 bg-blue-500/20 text-blue-400 rounded-full hover:bg-blue-500 hover:text-white transition shadow-lg">
+                                                    <Phone size={16} />
+                                                </a>
+                                                <a href={`https://wa.me/${waPhone}`} target="_blank" rel="noreferrer" className="p-2 bg-green-500/20 text-green-500 rounded-full hover:bg-green-500 hover:text-white transition shadow-lg">
+                                                    <MessageCircle size={16} />
+                                                </a>
+                                            </div>
                                         </div>
-                                        <div className="text-right">
-                                            <h3 className="font-bold text-white text-sm">{s.name}</h3>
-                                            <p className="text-xs text-gray-500 truncate">
-                                                {s.phoneMother ? `אמא: ${s.phoneMother}` : s.phoneFather ? `אבא: ${s.phoneFather}` : 'לחץ לפרטים מלאים'}
-                                            </p>
-                                        </div>
+                                    );
+                                };
+
+                                return (
+                                    <div key={s.name} className="bg-card border border-white/10 rounded-2xl overflow-hidden transition-all duration-200 shadow-sm hover:shadow-md">
+                                        <button 
+                                            onClick={() => setExpandedContacts(prev => ({...prev, [s.name]: !isExpanded}))}
+                                            className="w-full p-4 flex items-center justify-between bg-white/5 hover:bg-white/10 transition"
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold transition-colors ${isExpanded ? 'bg-accent text-accent-fg' : 'bg-black/30 text-gray-400'}`}>
+                                                    {s.name.charAt(0)}
+                                                </div>
+                                                <div className="text-right">
+                                                    <h3 className={`font-bold text-sm ${isExpanded ? 'text-accent' : 'text-white'}`}>{s.name}</h3>
+                                                    {!isExpanded && (
+                                                        <p className="text-[10px] text-gray-500 flex items-center gap-1">
+                                                            {hasPhone ? <Check size={10} className="text-green-500"/> : <X size={10}/>}
+                                                            {hasPhone ? 'פרטי קשר זמינים' : 'אין פרטי קשר'}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            {isExpanded ? <ChevronUp className="text-accent" size={20}/> : <ChevronDown className="text-gray-500" size={20}/>}
+                                        </button>
+                                        
+                                        {isExpanded && (
+                                            <div className="p-3 space-y-2 bg-black/20 border-t border-white/5 animate-in slide-in-from-top-2">
+                                                <button 
+                                                    onClick={() => handleStudentClick(s)}
+                                                    className="w-full py-2 bg-white/5 hover:bg-white/10 text-gray-400 text-xs rounded-lg mb-2 flex items-center justify-center gap-2"
+                                                >
+                                                    <User size={12}/> כרטיס תלמיד מלא
+                                                </button>
+
+                                                <ContactRow label="תלמיד" phone={s.studentCell} />
+                                                <ContactRow label={s.nameMother ? `אמא (${s.nameMother})` : "אמא"} phone={s.phoneMother} />
+                                                <ContactRow label={s.nameFather ? `אבא (${s.nameFather})` : "אבא"} phone={s.phoneFather} />
+                                                <ContactRow label="טלפון בבית" phone={s.homePhone} />
+                                                
+                                                {!hasPhone && <div className="text-center text-gray-500 text-xs py-2">לא הוזנו מספרי טלפון</div>}
+                                            </div>
+                                        )}
                                     </div>
-                                    <ChevronUp className="text-gray-600 rotate-90" size={20}/>
-                                </button>
-                            ))
+                                );
+                            })
                          }
                      </div>
                  </div>
@@ -1149,8 +1240,8 @@ function createStudyGuideDoc() {
                                                         <input type="file" accept=".xlsx,.xls" onChange={handleGradesFileUpload} className="w-full text-xs text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-blue-500/10 file:text-blue-500 hover:file:bg-blue-500/20"/>
                                                     </div>
                                                     <div className="border-t border-white/5 pt-3">
-                                                        <label className="block text-xs font-bold text-gray-400 mb-2">טעינת נתוני מחצית (ארכיון)</label>
-                                                        <input type="file" accept=".xlsx,.xls" onChange={handleSemesterFileUpload} className="w-full text-xs text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-purple-500/10 file:text-purple-500 hover:file:bg-purple-500/20"/>
+                                                        <label className="block text-xs font-bold text-gray-400 mb-2">טעינת קובץ אלפון (אנשי קשר)</label>
+                                                        <input type="file" accept=".xlsx,.xls" onChange={(e) => handleFileUpload(e, 'alfon')} className="w-full text-xs text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-pink-500/10 file:text-pink-500 hover:file:bg-pink-500/20"/>
                                                     </div>
                                                 </div>
                                             )}
@@ -1480,28 +1571,32 @@ function createStudyGuideDoc() {
                                                             
                                                             <div className="grid grid-cols-2 gap-2 mb-4">
                                                                 <label className="flex items-center gap-2 text-xs text-white p-2 bg-black/20 rounded-lg cursor-pointer">
-                                                                    <input type="checkbox" checked={resetOptions.points} onChange={e => setResetOptions({...resetOptions, points: e.target.checked})} className="rounded bg-black border-red-500/50 text-red-500 focus:ring-0"/>
+                                                                    <input type="checkbox" checked={resetOptions.points} onChange={e => handleResetOptionChange('points', e.target.checked)} className="rounded bg-black border-red-500/50 text-red-500 focus:ring-0"/>
                                                                     ניקוד מצטבר
                                                                 </label>
                                                                 <label className="flex items-center gap-2 text-xs text-white p-2 bg-black/20 rounded-lg cursor-pointer">
-                                                                    <input type="checkbox" checked={resetOptions.logs} onChange={e => setResetOptions({...resetOptions, logs: e.target.checked})} className="rounded bg-black border-red-500/50 text-red-500 focus:ring-0"/>
+                                                                    <input type="checkbox" checked={resetOptions.logs} onChange={e => handleResetOptionChange('logs', e.target.checked)} className="rounded bg-black border-red-500/50 text-red-500 focus:ring-0"/>
                                                                     היסטוריית פעולות
                                                                 </label>
                                                                 <label className="flex items-center gap-2 text-xs text-white p-2 bg-black/20 rounded-lg cursor-pointer">
-                                                                    <input type="checkbox" checked={resetOptions.purchases} onChange={e => setResetOptions({...resetOptions, purchases: e.target.checked})} className="rounded bg-black border-red-500/50 text-red-500 focus:ring-0"/>
+                                                                    <input type="checkbox" checked={resetOptions.purchases} onChange={e => handleResetOptionChange('purchases', e.target.checked)} className="rounded bg-black border-red-500/50 text-red-500 focus:ring-0"/>
                                                                     רכישות בחנות
                                                                 </label>
                                                                 <label className="flex items-center gap-2 text-xs text-white p-2 bg-black/20 rounded-lg cursor-pointer">
-                                                                    <input type="checkbox" checked={resetOptions.requests} onChange={e => setResetOptions({...resetOptions, requests: e.target.checked})} className="rounded bg-black border-red-500/50 text-red-500 focus:ring-0"/>
+                                                                    <input type="checkbox" checked={resetOptions.requests} onChange={e => handleResetOptionChange('requests', e.target.checked)} className="rounded bg-black border-red-500/50 text-red-500 focus:ring-0"/>
                                                                     בקשות ואתגרים
                                                                 </label>
                                                                 <label className="flex items-center gap-2 text-xs text-white p-2 bg-black/20 rounded-lg cursor-pointer">
-                                                                    <input type="checkbox" checked={resetOptions.scholastic} onChange={e => setResetOptions({...resetOptions, scholastic: e.target.checked})} className="rounded bg-black border-red-500/50 text-red-500 focus:ring-0"/>
+                                                                    <input type="checkbox" checked={resetOptions.scholastic} onChange={e => handleResetOptionChange('scholastic', e.target.checked)} className="rounded bg-black border-red-500/50 text-red-500 focus:ring-0"/>
                                                                     הערות לתעודה
                                                                 </label>
                                                                 <label className="flex items-center gap-2 text-xs text-white p-2 bg-black/20 rounded-lg cursor-pointer border border-green-500/30">
-                                                                    <input type="checkbox" checked={resetOptions.grades} onChange={e => setResetOptions({...resetOptions, grades: e.target.checked})} className="rounded bg-black border-red-500/50 text-red-500 focus:ring-0"/>
+                                                                    <input type="checkbox" checked={resetOptions.grades} onChange={e => handleResetOptionChange('grades', e.target.checked)} className="rounded bg-black border-red-500/50 text-red-500 focus:ring-0"/>
                                                                     <span className={resetOptions.grades ? "text-red-400 font-bold" : "text-gray-400"}>מחיקת ציונים</span>
+                                                                </label>
+                                                                <label className="flex items-center gap-2 text-xs text-white p-2 bg-black/20 rounded-lg cursor-pointer border border-pink-500/30">
+                                                                    <input type="checkbox" checked={resetOptions.alfon} onChange={e => handleResetOptionChange('alfon', e.target.checked)} className="rounded bg-black border-red-500/50 text-red-500 focus:ring-0"/>
+                                                                    <span className={resetOptions.alfon ? "text-red-400 font-bold" : "text-gray-400"}>מחיקת אנשי קשר (אלפון)</span>
                                                                 </label>
                                                             </div>
 
@@ -1593,6 +1688,90 @@ function createStudyGuideDoc() {
                   </div>
                   <div className="p-4 bg-primary border-t border-border flex justify-center">
                       <button onClick={() => setShowRules(false)} className="px-8 py-3 bg-white/10 hover:bg-white/20 rounded-xl font-bold">סגור</button>
+                  </div>
+              </div>
+          </div>
+      )}
+      
+      {/* Prize Winners Modal */}
+      {showWinners && (
+          <div className="fixed inset-0 z-[60] bg-black/95 backdrop-blur-md flex items-center justify-center p-6 animate-in fade-in">
+              <div className="bg-card w-full max-w-md rounded-3xl border border-[#d4af37] shadow-2xl relative overflow-hidden flex flex-col max-h-[85vh]">
+                  {/* Confetti effect background (simplified) */}
+                  <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                      <div className="absolute top-0 left-1/4 w-2 h-2 bg-red-500 rounded-full animate-bounce delay-100"></div>
+                      <div className="absolute top-0 right-1/4 w-2 h-2 bg-blue-500 rounded-full animate-bounce delay-300"></div>
+                      <div className="absolute top-10 left-1/2 w-2 h-2 bg-green-500 rounded-full animate-bounce delay-500"></div>
+                  </div>
+
+                  <div className="p-6 border-b border-[#d4af37]/30 bg-gradient-to-r from-yellow-900/40 to-black/40 flex justify-between items-center z-10">
+                      <h2 className="text-2xl font-black text-[#d4af37] flex items-center gap-2 drop-shadow-sm">
+                          <Gift size={28} className="animate-pulse"/> זוכים בפרסים!
+                      </h2>
+                      <button onClick={() => setShowWinners(false)} className="p-2 bg-white/5 rounded-full hover:bg-white/10"><X size={20}/></button>
+                  </div>
+                  
+                  <div className="flex-1 overflow-y-auto p-4 space-y-2 z-10 custom-scrollbar">
+                       {(Object.values(db) as Student[]).filter(s => s.total > 0).length === 0 ? (
+                           <div className="text-center py-10 text-gray-500">
+                               <Coins size={48} className="mx-auto mb-2 opacity-20"/>
+                               <p>עדיין אין תלמידים עם ניקוד חיובי.</p>
+                           </div>
+                       ) : (
+                           (Object.values(db) as Student[])
+                            .filter(s => s.total > 0)
+                            .sort((a,b) => b.total - a.total)
+                            .map((s, idx) => (
+                               <div key={s.name} className="flex justify-between items-center p-3 rounded-xl bg-white/5 border border-white/5 hover:bg-[#d4af37]/10 hover:border-[#d4af37]/30 transition group">
+                                   <div className="flex items-center gap-3">
+                                       <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shadow-lg ${idx === 0 ? 'bg-yellow-500 text-black' : idx === 1 ? 'bg-gray-400 text-black' : idx === 2 ? 'bg-orange-700 text-white' : 'bg-black/40 text-gray-500'}`}>
+                                           {idx + 1}
+                                       </div>
+                                       <span className="font-bold text-white group-hover:text-[#d4af37] transition-colors">{s.name}</span>
+                                   </div>
+                                   <span className="font-black text-xl text-[#d4af37]">{s.total}₪</span>
+                               </div>
+                            ))
+                       )}
+                  </div>
+                  
+                  <div className="p-4 bg-black/40 text-center text-xs text-[#d4af37] font-bold border-t border-[#d4af37]/20">
+                      כל הכבוד לזוכים! 👏
+                  </div>
+              </div>
+          </div>
+      )}
+      
+      {/* Goals List Modal */}
+      {showGoals && (
+          <div className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in">
+              <div className="bg-card w-full max-w-lg rounded-3xl border border-white/10 shadow-2xl relative overflow-hidden flex flex-col max-h-[85vh]">
+                  <div className="p-6 border-b border-border bg-black/20 flex justify-between items-center">
+                      <h2 className="text-xl font-black text-white flex items-center gap-2"><ListChecks size={24} className="text-blue-400"/> רשימת יעדים</h2>
+                      <button onClick={() => setShowGoals(false)} className="p-2 bg-white/5 rounded-full hover:bg-white/10"><X size={20}/></button>
+                  </div>
+                  
+                  <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+                       {(Object.values(db) as Student[]).filter(s => s.academicGoal).length === 0 ? (
+                           <div className="text-center py-10 text-gray-500">
+                               <Target size={48} className="mx-auto mb-2 opacity-20"/>
+                               <p>טרם הוגדרו יעדים לתלמידים.</p>
+                               <p className="text-xs mt-2">ניתן להגדיר יעד אישי בלחיצה על שם התלמיד > לשונית "ציונים ויעדים".</p>
+                           </div>
+                       ) : (
+                           (Object.values(db) as Student[])
+                            .filter(s => s.academicGoal)
+                            .sort((a,b) => a.name.localeCompare(b.name))
+                            .map((s) => (
+                               <div key={s.name} className="bg-white/5 p-4 rounded-xl border border-white/5">
+                                   <h4 className="font-bold text-accent text-sm mb-1">{s.name}</h4>
+                                   <div className="flex items-start gap-2">
+                                       <Target size={16} className="text-gray-500 mt-0.5 shrink-0"/>
+                                       <p className="text-sm text-gray-300 leading-relaxed">{s.academicGoal}</p>
+                                   </div>
+                               </div>
+                            ))
+                       )}
                   </div>
               </div>
           </div>

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Database, Student, UserRole } from '../types';
-import { GraduationCap, Lock, ArrowRight, User, KeyRound, Coins, CheckSquare, Square, ChevronRight, BookOpen } from 'lucide-react';
+import { GraduationCap, Lock, ArrowRight, User, KeyRound, Coins, CheckSquare, Square, ChevronRight, BookOpen, AlertTriangle, Timer } from 'lucide-react';
 
 interface LoginScreenProps {
   students: Student[];
@@ -20,12 +20,76 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ students, teacherPin, 
   const [rememberMe, setRememberMe] = useState(true);
   const [selectedStudentForLogin, setSelectedStudentForLogin] = useState<Student | null>(null);
 
+  // Security Lockout State
+  const [lockoutEndTime, setLockoutEndTime] = useState<number | null>(null);
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [timeLeft, setTimeLeft] = useState(0);
+
+  useEffect(() => {
+    // Check for existing lockout in localStorage
+    const storedLockout = localStorage.getItem('login_lockout');
+    const storedAttempts = localStorage.getItem('login_attempts');
+
+    if (storedAttempts) setFailedAttempts(parseInt(storedAttempts));
+
+    if (storedLockout) {
+        const endTime = parseInt(storedLockout);
+        if (endTime > Date.now()) {
+            setLockoutEndTime(endTime);
+        } else {
+            // Lockout expired
+            localStorage.removeItem('login_lockout');
+            localStorage.setItem('login_attempts', '0');
+            setFailedAttempts(0);
+        }
+    }
+  }, []);
+
+  // Timer effect for lockout countdown
+  useEffect(() => {
+    if (!lockoutEndTime) return;
+
+    const interval = setInterval(() => {
+        const remaining = Math.ceil((lockoutEndTime - Date.now()) / 1000);
+        if (remaining <= 0) {
+            setLockoutEndTime(null);
+            setFailedAttempts(0);
+            localStorage.removeItem('login_lockout');
+            localStorage.setItem('login_attempts', '0');
+            setPinInput("");
+        } else {
+            setTimeLeft(remaining);
+        }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [lockoutEndTime]);
+
   const handleTeacherLogin = () => {
+    if (lockoutEndTime) return;
+
     if (pinInput === teacherPin) {
+      // Success
       onLogin('teacher', undefined, rememberMe);
+      // Reset attempts on success
+      setFailedAttempts(0);
+      localStorage.setItem('login_attempts', '0');
     } else {
-      setError("סיסמה שגויה");
+      // Failure
+      const newAttempts = failedAttempts + 1;
+      setFailedAttempts(newAttempts);
+      localStorage.setItem('login_attempts', newAttempts.toString());
       setPinInput("");
+
+      if (newAttempts >= 3) {
+          const lockoutDuration = 5 * 60 * 1000; // 5 Minutes
+          const endTime = Date.now() + lockoutDuration;
+          setLockoutEndTime(endTime);
+          localStorage.setItem('login_lockout', endTime.toString());
+          setError("יותר מדי ניסיונות כושלים. המערכת ננעלה.");
+      } else {
+          setError(`סיסמה שגויה (${3 - newAttempts} ניסיונות נותרו)`);
+      }
     }
   };
 
@@ -54,6 +118,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ students, teacherPin, 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (view !== 'teacher' && view !== 'student-pin') return;
+      if (lockoutEndTime) return;
 
       // Numbers
       if (/^\d$/.test(e.key)) {
@@ -72,45 +137,45 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ students, teacherPin, 
       // Enter
       if (e.key === 'Enter') {
         if (view === 'teacher') {
-            if (pinInput === teacherPin) {
-                onLogin('teacher', undefined, rememberMe);
-            } else {
-                setError("סיסמה שגויה");
-                setPinInput("");
-            }
+            handleTeacherLogin();
         }
         if (view === 'student-pin' && selectedStudentForLogin) {
-            const correctPassword = selectedStudentForLogin.password || '1234';
-            if (pinInput === correctPassword) {
-                onLogin('student', selectedStudentForLogin.name);
-            } else {
-                setError("סיסמה שגויה");
-                setPinInput("");
-            }
+            verifyStudentPin();
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [view, pinInput, teacherPin, selectedStudentForLogin, onLogin, rememberMe]);
+  }, [view, pinInput, teacherPin, selectedStudentForLogin, onLogin, rememberMe, lockoutEndTime, failedAttempts]);
 
   const filteredStudents = students
     .filter(s => s.name.includes(searchStudent))
     .sort((a, b) => a.name.localeCompare(b.name));
 
   const renderKeypad = (onSubmit: () => void) => (
-    <div className="grid grid-cols-3 gap-3 mb-6">
+    <div className="grid grid-cols-3 gap-3 mb-6 relative">
+        {lockoutEndTime && (
+            <div className="absolute inset-0 bg-black/80 z-20 flex flex-col items-center justify-center rounded-xl backdrop-blur-sm text-center p-4">
+                <Timer className="text-red-500 w-12 h-12 mb-2 animate-pulse" />
+                <h3 className="text-red-500 font-bold text-lg">המערכת ננעלה</h3>
+                <p className="text-white text-xs mb-2">עקב ריבוי ניסיונות כושלים</p>
+                <div className="text-2xl font-mono font-bold text-white">
+                    {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
+                </div>
+            </div>
+        )}
         {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
             <button 
                 key={num} 
+                disabled={!!lockoutEndTime}
                 onClick={() => {
                     if (pinInput.length < 4) {
                         setPinInput(prev => prev + num);
                         setError("");
                     }
                 }}
-                className="bg-white/5 hover:bg-white/10 text-white font-bold text-xl py-4 rounded-xl active:scale-90 transition-transform"
+                className="bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed text-white font-bold text-xl py-4 rounded-xl active:scale-90 transition-transform"
             >
                 {num}
             </button>
@@ -118,19 +183,21 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ students, teacherPin, 
         <button onClick={() => {
             setPinInput("");
             setView(view === 'teacher' ? 'main' : 'student');
+            setError("");
         }} className="text-xs font-bold text-gray-500 hover:text-white">חזור</button>
         <button 
+            disabled={!!lockoutEndTime}
             onClick={() => {
                 if (pinInput.length < 4) {
                     setPinInput(prev => prev + '0');
                     setError("");
                 }
             }}
-            className="bg-white/5 hover:bg-white/10 text-white font-bold text-xl py-4 rounded-xl active:scale-90 transition-transform"
+            className="bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed text-white font-bold text-xl py-4 rounded-xl active:scale-90 transition-transform"
         >
             0
         </button>
-        <button onClick={() => { setPinInput(""); setError(""); }} className="text-xs font-bold text-red-400 hover:text-red-300">נקה</button>
+        <button disabled={!!lockoutEndTime} onClick={() => { setPinInput(""); setError(""); }} className="text-xs font-bold text-red-400 hover:text-red-300 disabled:opacity-30">נקה</button>
     </div>
   );
 
@@ -219,11 +286,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ students, teacherPin, 
         )}
 
         {view === 'teacher' && (
-            <div className="bg-[#2d1b15] border border-[#d4af37]/30 p-8 rounded-3xl shadow-2xl animate-in zoom-in-95 duration-300">
+            <div className={`bg-[#2d1b15] border border-[#d4af37]/30 p-8 rounded-3xl shadow-2xl animate-in zoom-in-95 duration-300 ${lockoutEndTime ? 'border-red-500/50' : ''}`}>
                 <div className="flex justify-center mb-6 text-[#d4af37]">
-                    <KeyRound size={40} />
+                    {lockoutEndTime ? <AlertTriangle size={40} className="text-red-500 animate-pulse"/> : <KeyRound size={40} />}
                 </div>
-                <h3 className="text-xl font-bold text-white mb-6">הזן קוד מורה</h3>
+                <h3 className="text-xl font-bold text-white mb-6">
+                    {lockoutEndTime ? <span className="text-red-500">המערכת ננעלה</span> : "הזן קוד מורה"}
+                </h3>
                 
                 {/* Masked Display */}
                 <div className="flex justify-center gap-3 mb-6">
@@ -234,11 +303,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ students, teacherPin, 
 
                 {renderKeypad(handleTeacherLogin)}
 
-                {error && <p className="text-red-500 text-sm font-bold mb-4 animate-bounce">{error}</p>}
+                {error && !lockoutEndTime && <p className="text-red-500 text-sm font-bold mb-4 animate-bounce">{error}</p>}
 
                 <div 
-                    onClick={() => setRememberMe(!rememberMe)}
-                    className="flex items-center justify-center gap-2 mb-4 cursor-pointer text-[#d4af37] text-sm font-bold opacity-90 hover:opacity-100"
+                    onClick={() => !lockoutEndTime && setRememberMe(!rememberMe)}
+                    className={`flex items-center justify-center gap-2 mb-4 text-[#d4af37] text-sm font-bold opacity-90 ${lockoutEndTime ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer hover:opacity-100'}`}
                 >
                     {rememberMe ? <CheckSquare size={18} /> : <Square size={18} />}
                     <span>זכור אותי במכשיר זה</span>
@@ -246,7 +315,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ students, teacherPin, 
 
                 <button 
                     onClick={handleTeacherLogin}
-                    className="w-full bg-[#d4af37] text-black font-black py-4 rounded-xl shadow-lg active:scale-95 transition-transform"
+                    disabled={!!lockoutEndTime}
+                    className="w-full bg-[#d4af37] disabled:bg-gray-600 disabled:text-gray-400 text-black font-black py-4 rounded-xl shadow-lg active:scale-95 transition-transform"
                 >
                     כניסה
                 </button>
@@ -320,7 +390,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ students, teacherPin, 
 
       </div>
       
-      <p className="fixed bottom-4 text-xs text-gray-600 font-mono">v1.3 - Secured</p>
+      <p className="fixed bottom-4 text-xs text-gray-600 font-mono">v1.4 - Protected</p>
     </div>
   );
 };
