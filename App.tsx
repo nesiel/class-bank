@@ -461,6 +461,65 @@ export default function App() {
     saveConfig({ ...config, actionScores: newScores });
   };
   
+  // --- Cloud Sync Logic ---
+  const handleCloudSave = async (isAuto = false, dbOverride?: Database, configOverride?: AppConfig) => {
+    const url = config.googleAppsScriptUrl;
+    if (!url) { if (!isAuto) alert("יש להגדיר כתובת סקריפט Google Apps Script"); return; }
+    setIsSyncing(true); setSyncStatus('saving');
+    try {
+      const dbToSave = dbOverride || db;
+      const baseConfig = configOverride || config;
+        
+      let configToSave = baseConfig;
+      if (!includeImagesInSync || isAuto) {
+          configToSave = { ...baseConfig, storeItems: baseConfig.storeItems.map(item => ({ ...item, image: undefined })), learningResources: (baseConfig.learningResources || []).map(r => r.type === 'file' && r.url.length > 1000 ? { ...r, url: 'OMITTED_AUTO_SAVE' } : r) };
+      }
+      const response = await fetch(url, { method: 'POST', redirect: 'follow', credentials: 'omit', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ db: dbToSave, config: configToSave }) });
+      if (!response.ok) throw new Error(`Status: ${response.status}`);
+      const result = await response.json();
+      if (result.status === 'success') { if (!isAuto) alert("הנתונים נשמרו בענן בהצלחה!"); setSyncStatus('saved'); setTimeout(() => setSyncStatus('idle'), 2000); } 
+      else { if (!isAuto) alert("השמירה בוצעה, אך התקבל דיווח לא שגרתי מהשרת."); setSyncStatus('error'); }
+    } catch (e) { console.error(e); setSyncStatus('error'); if (!isAuto) alert(`שגיאה בשמירה לענן: ${(e as Error).message}`); } finally { setIsSyncing(false); }
+  };
+
+  const handleCloudLoad = async (isAuto = false, configOverride?: AppConfig) => {
+    const url = configOverride?.googleAppsScriptUrl || config.googleAppsScriptUrl;
+    if (!url) { if (!isAuto) alert("יש להגדיר כתובת סקריפט Google Apps Script"); return; }
+    if(!isAuto && !window.confirm("פעולה זו תדרוס את הנתונים המקומיים. להמשיך?")) return;
+    setIsSyncing(true); setSyncStatus('saving');
+    try {
+      const response = await fetch(url, { redirect: 'follow', credentials: 'omit' });
+      if (!response.ok) throw new Error(`Status: ${response.status}`);
+      const data = await response.json();
+      skipAutoSaveRef.current = true;
+      if (data.db) saveDb(data.db);
+      if (data.config) {
+          const mergedStoreItems = (data.config.storeItems || []).map((cloudItem: StoreItem) => {
+               const localItem = config.storeItems.find(i => i.id === cloudItem.id);
+               return { ...cloudItem, image: cloudItem.image || localItem?.image };
+          });
+          const mergedResources = (data.config.learningResources || []).map((cloudRes: LearningResource) => {
+               if (cloudRes.url === 'OMITTED_AUTO_SAVE') {
+                   const localRes = (config.learningResources || []).find(r => r.id === cloudRes.id);
+                   return { ...cloudRes, url: localRes?.url || '' };
+               }
+               return cloudRes;
+          });
+          const mergedConfig = { ...(data.config as any), storeItems: mergedStoreItems, learningResources: mergedResources };
+          if (DEFAULT_CONFIG.googleAppsScriptUrl) mergedConfig.googleAppsScriptUrl = DEFAULT_CONFIG.googleAppsScriptUrl;
+          
+          saveConfig(mergedConfig);
+          // Apply UI Preferences immediately from cloud
+          if (mergedConfig.uiPreferences) {
+              if (mergedConfig.uiPreferences.adminCollapsed) setAdminCollapsed(mergedConfig.uiPreferences.adminCollapsed);
+              if (mergedConfig.uiPreferences.resetOptions) setResetOptions(mergedConfig.uiPreferences.resetOptions);
+          }
+      }
+      setSyncStatus('saved'); setTimeout(() => setSyncStatus('idle'), 2000);
+      if (!isAuto) alert("הנתונים נטענו בהצלחה!");
+    } catch (e) { console.error(e); setSyncStatus('error'); if (!isAuto) alert(`שגיאה בטעינה מהענן: ${(e as Error).message}`); } finally { setIsSyncing(false); }
+  };
+
   const handleChangePassword = () => {
       if (!loggedInStudentName) return;
       if (newPasswordInput.length < 4) {
@@ -468,7 +527,14 @@ export default function App() {
           return;
       }
       const updatedStudent = { ...db[loggedInStudentName], password: newPasswordInput };
-      saveDb({ ...db, [loggedInStudentName]: updatedStudent });
+      const newDb = { ...db, [loggedInStudentName]: updatedStudent };
+      saveDb(newDb);
+      
+      // Auto backup to cloud
+      if (config.googleAppsScriptUrl) {
+          handleCloudSave(true, newDb);
+      }
+      
       alert("הסיסמה שונתה בהצלחה!");
       setShowChangePassword(false);
       setNewPasswordInput("");
@@ -757,62 +823,6 @@ function createStudyGuideDoc() {
       }
   };
 
-  // --- Cloud Sync Logic ---
-  const handleCloudSave = async (isAuto = false) => {
-    const url = config.googleAppsScriptUrl;
-    if (!url) { if (!isAuto) alert("יש להגדיר כתובת סקריפט Google Apps Script"); return; }
-    setIsSyncing(true); setSyncStatus('saving');
-    try {
-      let configToSave = config;
-      if (!includeImagesInSync || isAuto) {
-          configToSave = { ...config, storeItems: config.storeItems.map(item => ({ ...item, image: undefined })), learningResources: (config.learningResources || []).map(r => r.type === 'file' && r.url.length > 1000 ? { ...r, url: 'OMITTED_AUTO_SAVE' } : r) };
-      }
-      const response = await fetch(url, { method: 'POST', redirect: 'follow', credentials: 'omit', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ db: db, config: configToSave }) });
-      if (!response.ok) throw new Error(`Status: ${response.status}`);
-      const result = await response.json();
-      if (result.status === 'success') { if (!isAuto) alert("הנתונים נשמרו בענן בהצלחה!"); setSyncStatus('saved'); setTimeout(() => setSyncStatus('idle'), 2000); } 
-      else { if (!isAuto) alert("השמירה בוצעה, אך התקבל דיווח לא שגרתי מהשרת."); setSyncStatus('error'); }
-    } catch (e) { console.error(e); setSyncStatus('error'); if (!isAuto) alert(`שגיאה בשמירה לענן: ${(e as Error).message}`); } finally { setIsSyncing(false); }
-  };
-
-  const handleCloudLoad = async (isAuto = false, configOverride?: AppConfig) => {
-    const url = configOverride?.googleAppsScriptUrl || config.googleAppsScriptUrl;
-    if (!url) { if (!isAuto) alert("יש להגדיר כתובת סקריפט Google Apps Script"); return; }
-    if(!isAuto && !window.confirm("פעולה זו תדרוס את הנתונים המקומיים. להמשיך?")) return;
-    setIsSyncing(true); setSyncStatus('saving');
-    try {
-      const response = await fetch(url, { redirect: 'follow', credentials: 'omit' });
-      if (!response.ok) throw new Error(`Status: ${response.status}`);
-      const data = await response.json();
-      skipAutoSaveRef.current = true;
-      if (data.db) saveDb(data.db);
-      if (data.config) {
-          const mergedStoreItems = (data.config.storeItems || []).map((cloudItem: StoreItem) => {
-               const localItem = config.storeItems.find(i => i.id === cloudItem.id);
-               return { ...cloudItem, image: cloudItem.image || localItem?.image };
-          });
-          const mergedResources = (data.config.learningResources || []).map((cloudRes: LearningResource) => {
-               if (cloudRes.url === 'OMITTED_AUTO_SAVE') {
-                   const localRes = (config.learningResources || []).find(r => r.id === cloudRes.id);
-                   return { ...cloudRes, url: localRes?.url || '' };
-               }
-               return cloudRes;
-          });
-          const mergedConfig = { ...(data.config as any), storeItems: mergedStoreItems, learningResources: mergedResources };
-          if (DEFAULT_CONFIG.googleAppsScriptUrl) mergedConfig.googleAppsScriptUrl = DEFAULT_CONFIG.googleAppsScriptUrl;
-          
-          saveConfig(mergedConfig);
-          // Apply UI Preferences immediately from cloud
-          if (mergedConfig.uiPreferences) {
-              if (mergedConfig.uiPreferences.adminCollapsed) setAdminCollapsed(mergedConfig.uiPreferences.adminCollapsed);
-              if (mergedConfig.uiPreferences.resetOptions) setResetOptions(mergedConfig.uiPreferences.resetOptions);
-          }
-      }
-      setSyncStatus('saved'); setTimeout(() => setSyncStatus('idle'), 2000);
-      if (!isAuto) alert("הנתונים נטענו בהצלחה!");
-    } catch (e) { console.error(e); setSyncStatus('error'); if (!isAuto) alert(`שגיאה בטעינה מהענן: ${(e as Error).message}`); } finally { setIsSyncing(false); }
-  };
-
   // --- Render Logic ---
   
   if (currentView === 'learning') {
@@ -914,6 +924,7 @@ function createStudyGuideDoc() {
                     <button 
                         onClick={() => setCurrentView('home')} 
                         className="p-2 -mr-2 text-gray-400 hover:text-white transition"
+                        title="חזור"
                     >
                         <ChevronRight size={28} />
                     </button>
@@ -934,22 +945,23 @@ function createStudyGuideDoc() {
                    {syncStatus === 'saved' && <Check size={18} className="text-green-500" />}
                    {syncStatus === 'error' && <AlertCircle size={18} className="text-red-500" />}
                    
-                   <button onClick={() => setCurrentView('learning')} className="p-2 bg-emerald-500/10 text-emerald-500 rounded-full hover:bg-emerald-500/20"><BookOpen size={20}/></button>
-                   <button onClick={() => setShowRules(true)} className="p-2 bg-purple-500/10 text-purple-400 rounded-full hover:bg-purple-500/20"><Book size={20}/></button>
-                   <button onClick={() => setCurrentView(currentView === 'challenges' ? 'home' : 'challenges')} className={`p-2 rounded-full transition ${currentView === 'challenges' ? 'bg-orange-500 text-white' : 'bg-orange-500/10 text-orange-500 hover:bg-orange-500/20'}`}><Target size={20}/></button>
+                   <button onClick={() => setCurrentView('learning')} className="p-2 bg-emerald-500/10 text-emerald-500 rounded-full hover:bg-emerald-500/20" title="מרכז למידה"><BookOpen size={20}/></button>
+                   <button onClick={() => setShowRules(true)} className="p-2 bg-purple-500/10 text-purple-400 rounded-full hover:bg-purple-500/20" title="תקנון"><Book size={20}/></button>
+                   <button onClick={() => setShowGoals(true)} className="p-2 bg-blue-500/10 text-blue-400 rounded-full hover:bg-blue-500/20" title="רשימת יעדים"><ListChecks size={20}/></button>
+                   <button onClick={() => setCurrentView(currentView === 'challenges' ? 'home' : 'challenges')} className={`p-2 rounded-full transition ${currentView === 'challenges' ? 'bg-orange-500 text-white' : 'bg-orange-500/10 text-orange-500 hover:bg-orange-500/20'}`} title="אתגרים"><Target size={20}/></button>
                    
                    {/* Store Button - Moved to Top */}
                    <button onClick={() => setCurrentView('store')} className={`p-2 rounded-full transition ${currentView === 'store' ? 'bg-indigo-500 text-white' : 'bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20'}`} title="חנות">
                       <Store size={20}/>
                    </button>
 
-                   <button onClick={handleLogout} className="p-2 bg-red-500/10 text-red-500 rounded-full hover:bg-red-500/20"><LogOut size={20}/></button>
+                   <button onClick={handleLogout} className="p-2 bg-red-500/10 text-red-500 rounded-full hover:bg-red-500/20" title="התנתק"><LogOut size={20}/></button>
                 </div>
              ) : (
                 <div className="flex items-center gap-2">
-                   <button onClick={() => setCurrentView('learning')} className="p-2 bg-emerald-500/10 text-emerald-500 rounded-full hover:bg-emerald-500/20"><BookOpen size={20}/></button>
-                   <button onClick={() => setShowRules(true)} className="p-2 bg-purple-500/10 text-purple-400 rounded-full hover:bg-purple-500/20"><Book size={20}/></button>
-                   <button onClick={handleLogout} className="p-2 bg-white/10 text-white rounded-full hover:bg-white/20"><LogOut size={20}/></button>
+                   <button onClick={() => setCurrentView('learning')} className="p-2 bg-emerald-500/10 text-emerald-500 rounded-full hover:bg-emerald-500/20" title="מרכז למידה"><BookOpen size={20}/></button>
+                   <button onClick={() => setShowRules(true)} className="p-2 bg-purple-500/10 text-purple-400 rounded-full hover:bg-purple-500/20" title="תקנון"><Book size={20}/></button>
+                   <button onClick={handleLogout} className="p-2 bg-white/10 text-white rounded-full hover:bg-white/20" title="התנתק"><LogOut size={20}/></button>
                 </div>
              )}
          </div>
@@ -991,12 +1003,6 @@ function createStudyGuideDoc() {
                                     className="px-4 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-2 bg-gradient-to-r from-yellow-600 to-yellow-500 text-white shadow-lg"
                                 >
                                     <Gift size={12} /> זוכים בפרסים
-                                </button>
-                                <button 
-                                    onClick={() => setShowGoals(true)}
-                                    className="px-4 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-2 bg-white/5 border border-white/10 text-gray-300 hover:bg-white/10"
-                                >
-                                    <ListChecks size={12} /> רשימת יעדים
                                 </button>
                             </div>
 
